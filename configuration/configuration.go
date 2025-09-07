@@ -23,6 +23,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/andmarios/bashistdb/llog"
@@ -317,7 +318,30 @@ func setParseFlags() {
 	flag.Parse()
 }
 
-// parse is the “main” of out configuration code.
+// preprocessGrepStyleFlags handles grep-style context flags (-A5, -B5, -C5)
+// It converts them to standard flag format (-A 5, -B 5, -C 5)
+func preprocessGrepStyleFlags() {
+	// Pattern to match grep-style context flags: -A123, -B123, -C123
+	grepFlagPattern := regexp.MustCompile(`^-([ABC])(\d+)$`)
+
+	newArgs := []string{os.Args[0]} // Start with program name
+
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+
+		if matches := grepFlagPattern.FindStringSubmatch(arg); matches != nil {
+			// Split grep-style flag into flag and value
+			newArgs = append(newArgs, "-"+matches[1], matches[2])
+		} else {
+			// Keep the argument as-is
+			newArgs = append(newArgs, arg)
+		}
+	}
+
+	os.Args = newArgs
+}
+
+// parse is the "main" of out configuration code.
 // Configuration seems a bit messy but that's the way it is.
 func parse() error {
 	// If this is set, skip reading settings from configuration file.
@@ -331,6 +355,9 @@ func parse() error {
 	if port == "" {
 		port = bashistPort
 	}
+
+	// Preprocess grep-style flags before parsing
+	preprocessGrepStyleFlags()
 
 	// Set flag vars and parse them
 	setParseFlags()

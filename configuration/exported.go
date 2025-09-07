@@ -185,9 +185,10 @@ Available options:
         Return the users in the database. You may use search criteria, eg to
         find users who run a certain commands. By default this option searches
         across all users and host unless you explicitly set them via flags.
-    -A K, -B K, -C K
+    -A K, -B K, -C K  (or grep-style: -A5, -B5, -C5)
         Also print K lines A(fter), B(efore) or before and after C(ontent) of
-        each match.
+        each match. Supports both traditional format (-A 5) and grep-style 
+        format (-A5).
 
     -local
         Force local [db] mode, despite remote mode being set by env or conf.
