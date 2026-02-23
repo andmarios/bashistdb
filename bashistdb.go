@@ -15,6 +15,8 @@
 // 	You should have received a copy of the GNU General Public License
 // along with bashistdb.  If not, see <http://www.gnu.org/licenses/>.
 
+//go:generate go run version/generate/main.go
+
 package main
 
 import (
@@ -32,12 +34,17 @@ import (
 var log *llog.Logger
 var v = version.Version // a debug build will append pprof to this
 
+func init() {
+	version.Version = vgVersion
+	v = vgVersion
+}
+
 func main() {
 	log = conf.Log
 
 	switch conf.Mode {
 	case conf.MODE_PRINT_VERSION:
-		fmt.Println("bashistdb v" + v)
+		fmt.Println("bashistdb " + v)
 		fmt.Println("https://github.com/andmarios/bashistdb")
 	case conf.MODE_SERVER:
 		if err := network.ServerMode(); err != nil {

@@ -1,5 +1,7 @@
 github.com/andmarios/crypto v0.0.0-20151018105542-744ffa8ec3a5 h1:4y9UZQYxvicW9NI3mbyj1YH1WXq1nSQuMw8lnJ059cQ=
 github.com/andmarios/crypto v0.0.0-20151018105542-744ffa8ec3a5/go.mod h1:x+lrNOmscLRyp5//Kq+GoteJjVH5z3dlK57US7wILVg=
+github.com/andmarios/go-versiongen v0.0.0-20170312172350-526f92e89a44 h1:DIGySGowg3t2lcNtcw1637GjJkXLjNrQXEj5DpW+lFU=
+github.com/andmarios/go-versiongen v0.0.0-20170312172350-526f92e89a44/go.mod h1:9c4Nfmm4FNLmbC+WKTdciSUepbm2JdbW882OeOuqo0s=
 github.com/mattn/go-sqlite3 v1.14.32 h1:JD12Ag3oLy1zQA+BNn74xRgaBbdhbNIDYvQUEuuErjs=
 github.com/mattn/go-sqlite3 v1.14.32/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 golang.org/x/crypto v0.41.0 h1:WKYxWedPGCTVVl5+WHSSrOBT0O8lx32+zxmHxijgXp4=

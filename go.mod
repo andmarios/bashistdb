@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/andmarios/go-versiongen v0.0.0-20170312172350-526f92e89a44 // indirect
 	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 )
