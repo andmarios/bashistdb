@@ -11,8 +11,9 @@ It can either be run as standalone, or it can be run in server-client mode,
 where many clients can store their history into a single database over the
 network. In this mode, communications are compressed and encrypted.
 
-Bashistdb stores for each history line the time it was run, the user that run it
-and the hostname. Currently it isn't meant to be secure against users. This means
+Bashistdb stores for each history line the time it was run, the user that run it,
+the hostname, the shell session PID, and the working directory. Currently it isn't
+meant to be secure against users. This means
 that any user may be able to see commands that other users run, or store commands
 under different user and hostnames. This is by design. One person may have many
 accounts in one or more machines.
@@ -52,8 +53,8 @@ In order to set up your bash to log and report RFC3339 timestamps, run:
 
     $ export HISTTIMEFORMAT="%FT%T%z "
     $ echo 'HISTTIMEFORMAT="%FT%T%z "' >> ~/.bash_rc
-    $ export PROMPT_COMMAND="${PROMPT_COMMAND}; (history 1 | bashistdb 2>/dev/null &)"
-    $ echo 'export PROMPT_COMMAND="${PROMPT_COMMAND}; (history 1 | bashistdb 2>/dev/null &)"' >> ~/.bashrc
+    $ export PROMPT_COMMAND="${PROMPT_COMMAND}; (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"
+    $ echo 'export PROMPT_COMMAND="${PROMPT_COMMAND}; (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"' >> ~/.bashrc
 
 Add distinct timestamps to your current bash_history:
 
@@ -117,6 +118,22 @@ if you are interested for a higher lever wrapper for golang's crypto/nacl/secret
 
 1: Currently bashistdb listens to all network interfaces (0.0.0.0). It
 may get a listen address configuration option in the future.
+
+### Session and Working Directory Tracking ###
+
+Bashistdb tracks which shell session (by PID) and working directory each command
+was run from. This is done via environment variables set in the PROMPT_COMMAND
+(handled automatically by `bashistdb -init`).
+
+You can filter queries by session or working directory:
+
+    $ bashistdb -session 12345 -lastk 20
+    $ bashistdb -workdir myproject -lastk 20
+    $ bashistdb -session 12345 -workdir src git
+
+These filters combine with any query type (`-lastk`, `-topk`, `-A`/`-B`/`-C`, etc.).
+
+Use `-f all` or `-f json` to see session PID and working directory in the output.
 
 ### Knobs ###
 

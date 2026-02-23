@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 
 	conf "github.com/andmarios/bashistdb/configuration"
@@ -30,12 +31,12 @@ import (
 // Format Strings
 const (
 	FORMAT_BASH_HISTORY_S = "#%d\n%s"
-	FORMAT_ALL_S          = "%05d | %s | % 10s | % 10s | %s"
+	FORMAT_ALL_S          = "%05d | %s | % 10s | % 10s | %6s | %s | %s"
 	FORMAT_COMMAND_LINE_S = "%d %s"
 	FORMAT_TIMESTAMP_S    = "%s: %s"
-	FORMAT_LOG_S          = "%s %s@%s %s"
+	FORMAT_LOG_S          = "%s %s@%s [%s] %s"
 	FORMAT_JSON_S         = "" // We use encoding/json for JSON
-	FORMAT_EXPORT_S       = "%s %s %s %s"
+	FORMAT_EXPORT_S       = "%s %s %s %s %s %s"
 	FORMAT_ROWS_S         = "%d"
 )
 
@@ -65,12 +66,12 @@ func New(format string) *Result {
 
 // A rowJSON is an internal struct to use with json.Marshal
 type rowJSON struct {
-	Row                           int
-	Datetime, User, Host, Command string
+	Row                                              int
+	Datetime, User, Host, Command, ShellPID, Workdir string
 }
 
 // AddRow adds a query row to a Result struct. This function is not thread safe!
-func (r Result) AddRow(row int, user, host string, command string, datetime time.Time) {
+func (r Result) AddRow(row int, user, host, command, shellpid, workdir string, datetime time.Time) {
 	var f string
 
 	switch *r.written {
@@ -89,19 +90,27 @@ func (r Result) AddRow(row int, user, host string, command string, datetime time
 
 	switch r.format {
 	case conf.FORMAT_ALL:
-		f = fmt.Sprintf(FORMAT_ALL_S, row, datetime, user, host, command)
+		f = fmt.Sprintf(FORMAT_ALL_S, row, datetime, user, host, shellpid, workdir, command)
 	case conf.FORMAT_BASH_HISTORY:
 		f = fmt.Sprintf(FORMAT_BASH_HISTORY_S, datetime.Unix(), command)
 	case conf.FORMAT_TIMESTAMP:
 		f = fmt.Sprintf(FORMAT_TIMESTAMP_S, datetime, command)
 	case conf.FORMAT_LOG:
-		f = fmt.Sprintf(FORMAT_LOG_S, datetime.Format(RFC3339alt), user, host, command)
+		f = fmt.Sprintf(FORMAT_LOG_S, datetime.Format(RFC3339alt), user, host, workdir, command)
 	case conf.FORMAT_JSON:
-		b, _ := json.Marshal(rowJSON{row, datetime.Format(RFC3339alt), user, host, command})
+		b, _ := json.Marshal(rowJSON{row, datetime.Format(RFC3339alt), user, host, command, shellpid, workdir})
 		_, _ = r.out.Write(b)
 		f = ""
 	case conf.FORMAT_EXPORT:
-		f = fmt.Sprintf(FORMAT_EXPORT_S, user, host, datetime.Format(RFC3339alt), command)
+		pid := shellpid
+		if pid == "" {
+			pid = "0"
+		}
+		cwd := workdir
+		if cwd == "" {
+			cwd = "."
+		}
+		f = fmt.Sprintf(FORMAT_EXPORT_S, user, host, pid, url.PathEscape(cwd), datetime.Format(RFC3339alt), command)
 	case conf.FORMAT_ROWS:
 		f = fmt.Sprintf(FORMAT_ROWS_S, row)
 	case conf.FORMAT_COMMAND_LINE:

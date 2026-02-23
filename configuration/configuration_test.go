@@ -209,7 +209,7 @@ func TestParse(t *testing.T) {
 	resetFlags("cmd", "-s")
 	remote = "localhost"
 	if err := parse(); err != nil {
-		t.Fatalf("Test remote override by server failed. " + err.Error())
+		t.Fatalf("Test remote override by server failed. %s", err.Error())
 	}
 
 	for _, v := range test {

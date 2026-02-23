@@ -64,6 +64,8 @@ var (
 	afterContent  = 5
 	beforeContent = 5
 	content       = 5
+	session       = ""
+	workdirQuery  = ""
 	// Custom Flags that need custom (non-flag package code) to parse and set. //
 	// These are not parsed from flags but we set them with flag.Visit
 	userSet          = false
@@ -76,6 +78,8 @@ var (
 	afterContentSet  = false
 	beforeContentSet = false
 	contentSet       = false
+	sessionSet       = false
+	workdirSet       = false
 	// These are set with manual searches
 	querySet = false
 	stdinSet = false
@@ -107,6 +111,10 @@ func setVisitedFlags(f *flag.Flag) {
 		beforeContentSet = true
 	case "C":
 		contentSet = true
+	case "session":
+		sessionSet = true
+	case "workdir":
+		workdirSet = true
 	}
 }
 
@@ -154,6 +162,10 @@ func checkFlagCombination() error {
 
 	if usersSet && (lastkSet || topkSet || querySet || rowSet) {
 		return errors.New("Incompatible options: -users with other type of query")
+	}
+
+	if (sessionSet || workdirSet) && delRowsSet {
+		return errors.New("Incompatible options: -session or -workdir with -del")
 	}
 
 	if rowSet && querySet {
@@ -273,6 +285,14 @@ func setOpAndQParams() error {
 		QParams.Command = "%" + strings.Join(flag.Args(), " ") + "%" // Grep like behaviour
 	}
 
+	// Session and workdir are filters applied to any query type.
+	if sessionSet {
+		QParams.Session = session
+	}
+	if workdirSet {
+		QParams.Workdir = "%" + workdirQuery + "%" // Grep like behaviour
+	}
+
 	return nil
 }
 
@@ -315,6 +335,8 @@ func setParseFlags() {
 	flag.IntVar(&afterContent, "A", afterContent, "return this many rows after match")
 	flag.IntVar(&beforeContent, "B", beforeContent, "return this many rows before match")
 	flag.IntVar(&content, "C", content, "return this many rows before and after match")
+	flag.StringVar(&session, "session", session, "filter by shell session PID")
+	flag.StringVar(&workdirQuery, "workdir", workdirQuery, "filter by working directory")
 	flag.Parse()
 }
 

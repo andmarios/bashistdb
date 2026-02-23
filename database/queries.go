@@ -35,12 +35,28 @@ import (
 	"github.com/andmarios/bashistdb/result"
 )
 
+// sessionWorkdirFilter returns SQL clause fragments and args for session/workdir filtering.
+func sessionWorkdirFilter(qp conf.QueryParams) (clause string, args []interface{}) {
+	if qp.Session != "" {
+		clause += " AND shellpid = ?"
+		args = append(args, qp.Session)
+	}
+	if qp.Workdir != "" {
+		clause += ` AND workdir LIKE ? ESCAPE '\'`
+		args = append(args, qp.Workdir)
+	}
+	return
+}
+
 // TopK returns the k most frequent command lines in history
 func (d Database) TopK(qp conf.QueryParams) ([]byte, error) {
+	filterClause, filterArgs := sessionWorkdirFilter(qp)
+	args := append([]interface{}{qp.User, qp.Host, qp.Command}, filterArgs...)
+	args = append(args, qp.Kappa)
 	rows, err := d.Query(`SELECT command, count(*) as count FROM history
-                               WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'
+                               WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'`+filterClause+`
                                GROUP BY command ORDER BY count DESC LIMIT ?`,
-		qp.User, qp.Host, qp.Command, qp.Kappa)
+		args...)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -58,24 +74,28 @@ func (d Database) TopK(qp conf.QueryParams) ([]byte, error) {
 
 // LastK returns the k most recent command lines in history
 func (d Database) LastK(qp conf.QueryParams) ([]byte, error) {
+	filterClause, filterArgs := sessionWorkdirFilter(qp)
+	baseArgs := append([]interface{}{qp.User, qp.Host, qp.Command}, filterArgs...)
+	args := append(baseArgs, qp.Kappa)
+
 	var rows *sql.Rows
 	var err error
 	switch qp.Unique {
 	case true:
 		rows, err = d.Query(`SELECT * FROM
                                       (SELECT rowid, * FROM history
-                                         WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'
+                                         WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'`+filterClause+`
                                          GROUP BY command
                                          ORDER BY datetime DESC LIMIT ?)
                                       ORDER BY datetime ASC`,
-			qp.User, qp.Host, qp.Command, qp.Kappa)
+			args...)
 	default:
 		rows, err = d.Query(`SELECT * FROM
                                       (SELECT rowid, * FROM history
-                                         WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'
+                                         WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'`+filterClause+`
                                          ORDER BY datetime DESC LIMIT ?)
                                    ORDER BY datetime ASC`,
-			qp.User, qp.Host, qp.Command, qp.Kappa)
+			args...)
 	}
 	if err != nil {
 		return []byte{}, err
@@ -84,11 +104,11 @@ func (d Database) LastK(qp conf.QueryParams) ([]byte, error) {
 
 	res := result.New(qp.Format)
 	for rows.Next() {
-		var user, host, command string
+		var user, host, command, shellpid, workdir string
 		var t time.Time
 		var row int
-		rows.Scan(&row, &user, &host, &command, &t)
-		res.AddRow(row, user, host, command, t)
+		rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir)
+		res.AddRow(row, user, host, command, shellpid, workdir, t)
 	}
 	return res.Formatted(), nil
 }
@@ -112,17 +132,21 @@ func (d Database) DefaultQuery(qp conf.QueryParams) ([]byte, error) {
 		commandQuery = "" // For PCRE we do the search, so we want everything. Slow.
 	}
 
+	filterClause, filterArgs := sessionWorkdirFilter(qp)
+
 	var rows *sql.Rows
 	switch qp.Unique {
 	case true:
+		args := append([]interface{}{qp.User, qp.Host, qp.Command}, filterArgs...)
 		rows, err = d.Query(`SELECT rowid, * FROM history
-                                        WHERE user LIKE ? AND host LIKE ? `+commandQuery+` ESCAPE '\'
+                                        WHERE user LIKE ? AND host LIKE ? `+commandQuery+` ESCAPE '\'`+filterClause+`
                                         GROUP BY command ORDER BY DATETIME ASC`,
-			qp.User, qp.Host, qp.Command)
+			args...)
 	default:
+		args := append([]interface{}{qp.User, qp.Host, qp.Command}, filterArgs...)
 		rows, err = d.Query(`SELECT rowid, * FROM history
-                                         WHERE user LIKE ? AND host LIKE ? `+commandQuery+` ESCAPE '\'`,
-			qp.User, qp.Host, qp.Command)
+                                         WHERE user LIKE ? AND host LIKE ? `+commandQuery+` ESCAPE '\'`+filterClause,
+			args...)
 	}
 	if err != nil {
 		return nil, err
@@ -131,17 +155,17 @@ func (d Database) DefaultQuery(qp conf.QueryParams) ([]byte, error) {
 
 	res := result.New(qp.Format)
 	for rows.Next() {
-		var user, host, command string
+		var user, host, command, shellpid, workdir string
 		var t time.Time
 		var row int
-		rows.Scan(&row, &user, &host, &command, &t)
+		rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir)
 		switch qp.Regex {
 		case true:
 			if regex.MatchString(command) {
-				res.AddRow(row, user, host, command, t)
+				res.AddRow(row, user, host, command, shellpid, workdir, t)
 			}
 		default:
-			res.AddRow(row, user, host, command, t)
+			res.AddRow(row, user, host, command, shellpid, workdir, t)
 		}
 	}
 	// Return the result without the newline at the end.
@@ -174,11 +198,13 @@ func (d Database) RunQuery(p conf.QueryParams) ([]byte, error) {
 
 // Users returns unique user@host pairs from the database.
 func (d Database) Users(qp conf.QueryParams) (res []byte, e error) {
+	filterClause, filterArgs := sessionWorkdirFilter(qp)
+	args := append([]interface{}{qp.User, qp.Host, qp.Command}, filterArgs...)
 	var result bytes.Buffer
 	result.WriteString(fmt.Sprintf("Unique user-hosts pairs:"))
 	rows, e := d.Query(`SELECT distinct(user), host FROM history
-                               WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'`,
-		qp.User, qp.Host, qp.Command)
+                               WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'`+filterClause,
+		args...)
 	if e != nil {
 		return result.Bytes(), e
 	}
@@ -297,11 +323,14 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 		commandQuery = "" // For PCRE we do the search, so we want everything. Slow.
 	}
 
+	filterClause, filterArgs := sessionWorkdirFilter(qp)
+
 	// Stage 1: find matches and get an array with their datetime
 	var rows *sql.Rows
+	stage1Args := append([]interface{}{qp.User, qp.Host, qp.Command}, filterArgs...)
 	rows, err = d.Query(`SELECT datetime, command FROM history
-                                         WHERE user LIKE ? AND host LIKE ? `+commandQuery+` ESCAPE '\'`,
-		qp.User, qp.Host, qp.Command)
+                                         WHERE user LIKE ? AND host LIKE ? `+commandQuery+` ESCAPE '\'`+filterClause,
+		stage1Args...)
 
 	if err != nil {
 		return nil, err
@@ -328,12 +357,14 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 	for _, v := range hits {
 		var content []int
 		// Before query also includes the current command, thus is always run.
+		beforeArgs := append([]interface{}{v, qp.User, qp.Host}, filterArgs...)
+		beforeArgs = append(beforeArgs, qp.BeforeContent+1)
 		rows, err = d.Query(`SELECT rowid, datetime FROM
                                       (SELECT rowid, datetime FROM history
-	                                     WHERE datetime <= ? AND user LIKE ? AND host LIKE ? ESCAPE '\'
+	                                     WHERE datetime <= ? AND user LIKE ? AND host LIKE ? ESCAPE '\'`+filterClause+`
                                          ORDER BY datetime DESC LIMIT ?)
                                       ORDER BY datetime ASC`,
-			v, qp.User, qp.Host, qp.BeforeContent+1) // Here we include current query to before
+			beforeArgs...) // Here we include current query to before
 		if err != nil {
 			return nil, err
 		}
@@ -346,10 +377,12 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 		}
 		// After runs only if needed.
 		if qp.AfterContent > 0 {
+			afterArgs := append([]interface{}{v, qp.User, qp.Host}, filterArgs...)
+			afterArgs = append(afterArgs, qp.AfterContent)
 			rows, err = d.Query(`SELECT rowid, datetime FROM history
-	                                         WHERE datetime > ? AND user LIKE ? AND host LIKE ? ESCAPE '\'
+	                                         WHERE datetime > ? AND user LIKE ? AND host LIKE ? ESCAPE '\'`+filterClause+`
                                              ORDER BY datetime ASC LIMIT ?`,
-				v, qp.User, qp.Host, qp.AfterContent)
+				afterArgs...)
 			if err != nil {
 				return nil, err
 			}
@@ -397,11 +430,11 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 
 		res := result.New(qp.Format)
 		for rows.Next() {
-			var user, host, command string
+			var user, host, command, shellpid, workdir string
 			var t time.Time
 			var row int
-			rows.Scan(&row, &user, &host, &command, &t)
-			res.AddRow(row, user, host, command, t)
+			rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir)
+			res.AddRow(row, user, host, command, shellpid, workdir, t)
 		}
 		out.Write(res.Formatted())
 		if i < len(hitsContent)-1 {

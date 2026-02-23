@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -45,7 +46,7 @@ const RFC3339alt = "2006-01-02T15:04:05-0700"
 // VERSION is the database's schema supported version.
 // If your database is older it will be automatically migrated.
 // If it is newer you have to update your bashistdb copy.
-const VERSION = "2.1"
+const VERSION = "2.2"
 
 // A Database holds a bashistdb database.
 type Database struct {
@@ -96,14 +97,12 @@ func New() (Database, error) {
 		}
 	}
 	// Prepare various statements that may be used frequently.
-	errs := make([]error, 5)
 	var insert *sql.Stmt
-	insert, errs[0] = db.Prepare("INSERT INTO history(user, host, command, datetime) VALUES(?, ?, ?, ?)")
-	for _, e := range errs {
-		if e != nil {
-			_ = db.Close()
-			return Database{}, e
-		}
+	var err2 error
+	insert, err2 = db.Prepare("INSERT INTO history(user, host, command, datetime, shellpid, workdir) VALUES(?, ?, ?, ?, ?, ?)")
+	if err2 != nil {
+		_ = db.Close()
+		return Database{}, err2
 	}
 	stmts := statements{insert}
 	return Database{db, stmts}, nil
@@ -116,6 +115,8 @@ CREATE TABLE history (
     host     TEXT,
     command  TEXT,
     datetime DATETIME,
+    shellpid TEXT DEFAULT '',
+    workdir  TEXT DEFAULT '',
     PRIMARY KEY (user, command, datetime)
 );
 CREATE INDEX HistoryDatetimeIdx ON history(datetime);
@@ -156,9 +157,9 @@ CREATE VIEW connections AS
 // AddRecord tries to insert a new record in the database,
 // if the record already exists, it updates the count
 // Note: function isn't used anywhere, may need testing if used.
-func (d Database) AddRecord(user, host, command string, time time.Time) error {
+func (d Database) AddRecord(user, host, command string, time time.Time, shellpid, workdir string) error {
 	// Try to insert row
-	_, err := d.insert.Exec(user, host, command, time)
+	_, err := d.insert.Exec(user, host, command, time, shellpid, workdir)
 	if err != nil {
 		// If failed due to duplicate primary key, then ignore error
 		// We expect for ease of use, the user to resubmit the whole
@@ -185,19 +186,25 @@ var parseLine = regexp.MustCompile(`^ *[0-9]+\*? *([0-9T:+-]{24,24}) *(.*)`)
 //([a-zA-Z_][a-zA-Z0-9_-]*) ([a-zA-Z0-9][a-zA-Z0-9.-]*) *([0-9T:+-]{24,24}) *(.*)
 var parseExportLine = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_-]*) ([a-zA-Z0-9][a-zA-Z0-9.-]*) *([0-9T:+-]{24,24}) *(.*)`)
 
+// A parseExportLineExt parses extended export format with PID and URL-encoded CWD:
+//     USER HOSTNAME PID URL_ENCODED_CWD RFC3339_DATETIME COMMAND
+var parseExportLineExt = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_-]*) ([a-zA-Z0-9][a-zA-Z0-9.-]*) +(\d+) +(\S+) +([0-9T:+-]{24,24}) +(.*)`)
+
 // AddFromBuffer reads from a buffered Reader and scans for lines that match
 // history command's structure:
 //     LINENUM RFC3339_DATETIME COMMAND
-// Upon succesful encounter it tries to store it to the database. It counts
+// or extended export format:
+//     USER HOSTNAME PID URL_ENCODED_CWD RFC3339_DATETIME COMMAND
+// or old export format:
+//     USER HOSTNAME RFC3339_DATETIME COMMAND
+// Upon successful encounter it tries to store it to the database. It counts
 // total lines read and lines failed to insert into the database —usually
 // because they already exist. It reports the results in a sentence (stats
 // string) because we don't anything fancier currently.
-func (d Database) AddFromBuffer(r *bufio.Reader, user, host string) (stats string, e error) {
-	//                                  LINENUM        DATETIME         CM
+func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir string) (stats string, e error) {
 	tx, _ := d.Begin()
 	stmt := tx.Stmt(d.insert)
 	total, failed := 0, 0
-	lineFormat := 1 // 1 means default history format, 3 is for export format
 	var once sync.Once
 	for {
 		historyLine, err := r.ReadString('\n')
@@ -210,48 +217,77 @@ func (d Database) AddFromBuffer(r *bufio.Reader, user, host string) (stats strin
 			}
 		}
 
+		var lineUser, lineHost, lineCommand, linePid, lineCwd string
+		var lineTime time.Time
+
+		// Try default history format first (most common):
+		//     LINENUM RFC3339_DATETIME COMMAND
 		args := parseLine.FindStringSubmatch(historyLine)
-		if len(args) != 3 {
-			args = parseExportLine.FindStringSubmatch(historyLine)
-			if len(args) != 5 {
-				log.Info.Println("Could't decode line, unknown format. Skipping:", historyLine)
-				failed++
-				continue
+		if len(args) == 3 {
+			lineTime, err = time.Parse(RFC3339alt, args[1])
+			if err != nil {
+				tx.Rollback()
+				return "", err
 			}
-			once.Do(func() { log.Info.Println("Bashistdb export format detected.") })
-			lineFormat = 3
+			lineUser = user
+			lineHost = host
+			lineCommand = strings.TrimSuffix(args[2], "\n")
+			linePid = shellpid
+			lineCwd = workdir
+		} else {
+			// Try extended export format (new, 6 fields):
+			//     USER HOSTNAME PID URL_ENCODED_CWD RFC3339_DATETIME COMMAND
+			args = parseExportLineExt.FindStringSubmatch(historyLine)
+			if len(args) == 7 {
+				once.Do(func() { log.Info.Println("Bashistdb extended export format detected.") })
+				lineTime, err = time.Parse(RFC3339alt, args[5])
+				if err != nil {
+					tx.Rollback()
+					return "", err
+				}
+				lineUser = args[1]
+				lineHost = args[2]
+				linePid = args[3]
+				lineCwd, _ = url.PathUnescape(args[4])
+				lineCommand = strings.TrimSuffix(args[6], "\n")
+			} else {
+				// Try old export format (4 fields):
+				//     USER HOSTNAME RFC3339_DATETIME COMMAND
+				args = parseExportLine.FindStringSubmatch(historyLine)
+				if len(args) == 5 {
+					once.Do(func() { log.Info.Println("Bashistdb export format detected.") })
+					lineTime, err = time.Parse(RFC3339alt, args[3])
+					if err != nil {
+						tx.Rollback()
+						return "", err
+					}
+					lineUser = args[1]
+					lineHost = args[2]
+					lineCommand = strings.TrimSuffix(args[4], "\n")
+					linePid = ""
+					lineCwd = ""
+				} else {
+					log.Info.Println("Couldn't decode line, unknown format. Skipping:", historyLine)
+					failed++
+					continue
+				}
+			}
 		}
 
-		time, err := time.Parse(RFC3339alt, args[lineFormat])
-		if err != nil {
-			tx.Rollback()
-			return "", err
-		}
-
-		switch lineFormat {
-		case 1:
-			_, err = stmt.Exec(user, host, strings.TrimSuffix(args[2], "\n"), time)
-		case 3:
-			_, err = stmt.Exec(args[1], args[2], strings.TrimSuffix(args[4], "\n"), time)
-		}
+		_, err = stmt.Exec(lineUser, lineHost, lineCommand, lineTime, linePid, lineCwd)
 		if err != nil {
 			// If failed due to duplicate primary key, then ignore error
 			// We expect for ease of use, the user to resubmit the whole
 			// history from time to time.
 			if driverErr, ok := err.(sqlite3.Error); ok {
 				if driverErr.ExtendedCode == sqlite3.ErrConstraintPrimaryKey {
-					switch lineFormat {
-					case 1:
-						log.Debug.Println("Duplicate entry. Ignoring.", user, host, strings.TrimSuffix(args[2], "\n"), time)
-					case 3:
-						log.Debug.Println("Duplicate entry. Ignoring.", args[1], args[2], strings.TrimSuffix(args[4], "\n"), time)
-					}
+					log.Debug.Println("Duplicate entry. Ignoring.", lineUser, lineHost, lineCommand, lineTime)
 					failed++
 				} else {
 					tx.Rollback()
 					return "", err
 				}
-			} else { // Normally we can never reach this. Should we omit it?
+			} else {
 				return "", err
 			}
 		}
@@ -342,18 +378,42 @@ func migrate(d *sql.DB) error {
 		if _, err = tx.Exec(`CREATE INDEX HistoryDatetimeIdx ON history(datetime)`); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(`UPDATE admin SET value=? WHERE key LIKE 'version'`, VERSION); err != nil {
+		if _, err = tx.Exec(`UPDATE admin SET value=? WHERE key LIKE 'version'`, "2.1"); err != nil {
 			return err
 		}
 		if err = tx.Commit(); err != nil {
 			return err
 		}
-		log.Info.Println("Database upgraded to latest version (2.1).")
-		return nil
+		log.Info.Println("Database upgraded to version 2.1.")
+		fallthrough
 	case "2.1":
+		tx, err := d.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`ALTER TABLE history ADD COLUMN shellpid TEXT DEFAULT ''`); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`ALTER TABLE history ADD COLUMN workdir TEXT DEFAULT ''`); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`UPDATE admin SET value=? WHERE key LIKE 'version'`, "2.2"); err != nil {
+			return err
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+		log.Info.Println("Database upgraded to version 2.2.")
+		fallthrough
+	case "2.2":
 		log.Debug.Println("Database on latest version.")
 	}
 
+	// Re-read version after migration since the local variable is stale.
+	err = d.QueryRow(`SELECT value FROM admin WHERE key LIKE "version"`).Scan(&version)
+	if err != nil {
+		return err
+	}
 	if version != VERSION {
 		return errors.New("Database version different than code version but couldn't fix it.")
 	}

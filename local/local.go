@@ -44,7 +44,9 @@ func Run() error {
 	switch conf.Operation {
 	case conf.OP_IMPORT:
 		r := bufio.NewReader(os.Stdin)
-		stats, err := db.AddFromBuffer(r, conf.User, conf.Hostname)
+		shellpid := os.Getenv("BASHISTDB_PID")
+		workdir := os.Getenv("BASHISTDB_CWD")
+		stats, err := db.AddFromBuffer(r, conf.User, conf.Hostname, shellpid, workdir)
 		if err != nil {
 			return errors.New("Error while processing stdin: " +
 				err.Error())

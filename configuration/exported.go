@@ -97,6 +97,8 @@ type QueryParams struct {
 	Regex         bool   // Search is a regular expression
 	AfterContent  int    // Return also this many lines after match
 	BeforeContent int    // Return also this many lines before match
+	Session       string // Filter by shell PID
+	Workdir       string // Filter by working directory
 }
 
 // Available query types
@@ -111,6 +113,7 @@ const (
 	QUERY_DEMO    = "demo"    // Run some demo queries
 	QUERY_ROW     = "row"     // Return a plain single row given its rowid
 	QUERY_CONTENT = "content" // Content search (n lines before, after or both)
+	QUERY_SESSION = "session" // Commands from a specific shell session
 	DELETE        = "delete"  // Delete rows given their rowid
 )
 
@@ -187,8 +190,14 @@ Available options:
         across all users and host unless you explicitly set them via flags.
     -A K, -B K, -C K  (or grep-style: -A5, -B5, -C5)
         Also print K lines A(fter), B(efore) or before and after C(ontent) of
-        each match. Supports both traditional format (-A 5) and grep-style 
+        each match. Supports both traditional format (-A 5) and grep-style
         format (-A5).
+    -session PID
+        Filter results to commands from a specific shell session identified
+        by its PID. Can be combined with other query types (e.g. -lastk, -A).
+    -workdir DIR
+        Filter results to commands run in a matching working directory.
+        Uses full text search (like grep). Can be combined with other queries.
 
     -local
         Force local [db] mode, despite remote mode being set by env or conf.

@@ -48,12 +48,12 @@ func TestNew(t *testing.T) {
 
 	// Test add record
 	tt := time.Date(2015, 1, 1, 1, 1, 0, 0, time.UTC)
-	err = testdb.AddRecord("user1", "host1", "htop", tt)
+	err = testdb.AddRecord("user1", "host1", "htop", tt, "", "")
 	if err != nil {
 		t.Fatal("AddRecord failed: " + err.Error())
 	}
 	// Test try to add duplicate record
-	err = testdb.AddRecord("user1", "host1", "htop", tt)
+	err = testdb.AddRecord("user1", "host1", "htop", tt, "", "")
 	if err != nil {
 		t.Fatal("AddRecord failed: " + err.Error())
 	}
@@ -61,7 +61,7 @@ func TestNew(t *testing.T) {
 	// Test add from buffer: default (history pipe) import:
 	// also test for duplicate records
 	br := bufio.NewReader(bytes.NewReader(entriesDefault))
-	stats, err := testdb.AddFromBuffer(br, "user", "test")
+	stats, err := testdb.AddFromBuffer(br, "user", "test", "", "")
 	if err != nil {
 		t.Fatal("AddFromBuffer failed: ", err.Error())
 	}
@@ -73,7 +73,7 @@ func TestNew(t *testing.T) {
 	// Test add from buffer, restore (bashist export) format:
 	// also test for bad records
 	br = bufio.NewReader(bytes.NewReader(entriesImport))
-	stats, err = testdb.AddFromBuffer(br, "", "")
+	stats, err = testdb.AddFromBuffer(br, "", "", "", "")
 	if err != nil {
 		t.Fatal("AddFromBuffer failed: ", err.Error())
 	}
@@ -200,7 +200,7 @@ func TestNew(t *testing.T) {
 			}
 		case ER:
 			if err == nil {
-				t.Fatal("Test '%s' should have returned error. "+
+				t.Fatalf("Test '%s' should have returned error. "+
 					"Instead  returned: %s.", v.test, string(res))
 			}
 		}

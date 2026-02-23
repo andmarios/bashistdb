@@ -49,6 +49,8 @@ type Message struct {
 	Hostname string
 	QParams  conf.QueryParams
 	Version  string
+	ShellPID string
+	Workdir  string
 }
 
 var log *llog.Logger
@@ -107,7 +109,8 @@ func ClientMode() error {
 		}
 
 		msg = Message{Type: HISTORY, Payload: history, User: conf.User,
-			Hostname: conf.Hostname}
+			Hostname: conf.Hostname, ShellPID: os.Getenv("BASHISTDB_PID"),
+			Workdir: os.Getenv("BASHISTDB_CWD")}
 
 		log.Info.Println("Sent history.")
 	case conf.OP_QUERY:
@@ -158,7 +161,7 @@ func handleConn(conn net.Conn) {
 	switch msg.Type {
 	case HISTORY:
 		r := bufio.NewReader(bytes.NewReader(msg.Payload))
-		res, err := db.AddFromBuffer(r, msg.User, msg.Hostname)
+		res, err := db.AddFromBuffer(r, msg.User, msg.Hostname, msg.ShellPID, msg.Workdir)
 		if err != nil {
 			result = []byte(err.Error())
 		} else {
