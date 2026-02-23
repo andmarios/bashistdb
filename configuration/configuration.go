@@ -366,6 +366,10 @@ func preprocessGrepStyleFlags() {
 // parse is the "main" of out configuration code.
 // Configuration seems a bit messy but that's the way it is.
 func parse() error {
+	// Create logger early so it's available even if parse fails.
+	// It will be recreated with the correct verbosity level later.
+	Log = llog.New(0)
+
 	// If this is set, skip reading settings from configuration file.
 	if t := os.Getenv("BASHISTDB_TEST"); t == "" {
 		if err := readConfFile(); err != nil {
@@ -397,7 +401,7 @@ func parse() error {
 		verbosity = 2
 	}
 
-	// Create global logger
+	// Recreate logger with the requested verbosity level.
 	Log = llog.New(verbosity)
 
 	// Determine run mode. A run mode is expected to run and then bashistdb toexit.

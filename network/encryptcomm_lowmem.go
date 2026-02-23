@@ -31,7 +31,9 @@ import (
 )
 
 func init() {
-	conf.Log.Debug.Println("Lowmem build.")
+	if conf.Log != nil {
+		conf.Log.Debug.Println("Lowmem build.")
+	}
 }
 
 func encryptDispatch(conn net.Conn, m Message) error {

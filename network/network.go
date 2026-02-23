@@ -57,7 +57,9 @@ var log *llog.Logger
 var db database.Database
 
 func init() {
-	log = conf.Log
+	if conf.Log != nil {
+		log = conf.Log
+	}
 }
 
 // ServerMode is the server process of bashistdb.
