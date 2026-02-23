@@ -1,0 +1,12 @@
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - gosimple
+    - ineffassign
+    - unused
+    - errcheck
+
+issues:
+  exclude-files:
+    - "version\\.go$"

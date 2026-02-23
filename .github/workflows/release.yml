@@ -1,0 +1,158 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  CGO_ENABLED: "1"
+
+jobs:
+  build-binaries:
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+            cc: gcc
+            setup: sudo apt-get update && sudo apt-get install -y gcc
+            suffix: ""
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-latest
+            cc: aarch64-linux-gnu-gcc
+            setup: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+            suffix: ""
+          - goos: darwin
+            goarch: amd64
+            runner: macos-13
+            cc: clang
+            setup: ""
+            suffix: ""
+          - goos: darwin
+            goarch: arm64
+            runner: macos-latest
+            cc: clang
+            setup: ""
+            suffix: ""
+          - goos: windows
+            goarch: amd64
+            runner: windows-latest
+            cc: gcc
+            setup: ""
+            suffix: ".exe"
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Install C compiler
+        if: matrix.setup != ''
+        run: ${{ matrix.setup }}
+
+      - name: Generate version
+        run: go generate ./...
+
+      - name: Build standard
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+        run: go build -ldflags='-s -w' -o bashistdb-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} .
+
+      - name: Build lowmem
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+        run: go build -tags lowmem -ldflags='-s -w' -o bashistdb-${{ matrix.goos }}-${{ matrix.goarch }}-lowmem${{ matrix.suffix }} .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bashistdb-*
+
+  create-release:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la bashistdb-*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bashistdb-*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+
+  docker:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Generate version
+        run: go generate ./...
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

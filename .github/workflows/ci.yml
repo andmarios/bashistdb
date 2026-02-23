@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CGO_ENABLED: "1"
+  BASHISTDB_TEST: test
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Install gcc
+        run: sudo apt-get update && sudo apt-get install -y gcc
+
+      - name: Generate version
+        run: go generate ./...
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+      - name: Vulnerability check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Test
+        run: go test ./... -v -race
+
+      - name: Build (standard)
+        run: go build -ldflags='-s -w' .
+
+      - name: Build (lowmem)
+        run: go build -tags lowmem -ldflags='-s -w' .

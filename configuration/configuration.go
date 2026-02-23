@@ -1,4 +1,4 @@
-// Copyright (c) 2015, Marios Andreopoulos.
+// Copyright (c) 2015-2026, Marios Andreopoulos.
 //
 // This file is part of bashistdb.
 //
@@ -488,7 +488,7 @@ func welcomeMessages() {
 	Log.Info.Println("Welcome " + User + "@" + Hostname + ". Bashistdb is in " + m + " mode.")
 	Log.Debug.Println("Loaded some settings from environment. Configuration file and flags can override them.")
 	if foundConfFile {
-		Log.Info.Println("Loaded some settings from ~/.bashistdbconf. Command line flags can override them.")
+		Log.Info.Println("Loaded some settings from ~/.bashistdb.conf. Command line flags can override them.")
 	}
 
 	if Operation == OP_QUERY {

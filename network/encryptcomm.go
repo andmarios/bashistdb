@@ -1,6 +1,6 @@
 // +build !lowmem
 
-// Copyright (c) 2015, Marios Andreopoulos.
+// Copyright (c) 2015-2026, Marios Andreopoulos.
 //
 // This file is part of bashistdb.
 //

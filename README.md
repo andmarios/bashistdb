@@ -30,6 +30,11 @@ Install sqlite3 on your machine and go get bashistdb:
 
     $ go get github.com/andmarios/bashistdb
 
+To build from source with version information from git tags:
+
+    $ go generate ./...
+    $ go build
+
 If you are on a hardened machine, you may need instead:
 
     $ go get -u -ldflags '-extldflags=-fno-PIC' github.com/andmarios/bashistdb
@@ -154,10 +159,38 @@ below 20MiB of RAM and occasionally rising shortly to 44 or more, depending on s
 network connections. Performance wise this is sub-optimal but if you are on a low-end
 server it is necessary.
 
+CI/CD
+-----
+
+CI runs automatically on every push to `master` and on pull requests. It checks formatting,
+runs `go vet`, `golangci-lint`, `govulncheck`, tests (with race detector), and builds both
+standard and lowmem variants.
+
+Tagged releases (`v*`) produce cross-platform binaries for Linux (amd64, arm64),
+macOS (amd64, arm64), and Windows (amd64) — each in standard and lowmem variants.
+Binaries are published as GitHub Release assets.
+
+### Docker ###
+
+A Docker image is published to GHCR on each tagged release:
+
+    $ docker pull ghcr.io/andmarios/bashistdb:latest
+
+Run the server with a persistent volume:
+
+    $ docker run -d \
+        -p 25625:25625 \
+        -v bashistdb-data:/data \
+        -e BASHISTDB_KEY=your_passphrase \
+        ghcr.io/andmarios/bashistdb:latest
+
+The image runs in server mode by default, uses `/data` as the database directory,
+and exposes port `25625`.
+
 License
 -------
 
-Copyright (c) 2015, Marios Andreopoulos.
+Copyright (c) 2015-2026, Marios Andreopoulos.
 
 This file is part of bashistdb.
 

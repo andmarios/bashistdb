@@ -1,0 +1,9 @@
+.git
+*.sqlite3
+*.test
+*.db
+bashistdb
+CLAUDE.md
+TEST_REVIEW.md
+testdata/
+test_*.sh
