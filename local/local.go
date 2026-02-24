@@ -20,7 +20,6 @@ package local
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 
@@ -35,7 +34,7 @@ var log *llog.Logger
 func Run() error {
 	db, err := database.New()
 	if err != nil {
-		return errors.New("Failed to load database: " + err.Error())
+		return fmt.Errorf("failed to load database: %w", err)
 	}
 	defer db.Close()
 
@@ -48,8 +47,7 @@ func Run() error {
 		workdir := os.Getenv("BASHISTDB_CWD")
 		stats, err := db.AddFromBuffer(r, conf.User, conf.Hostname, shellpid, workdir)
 		if err != nil {
-			return errors.New("Error while processing stdin: " +
-				err.Error())
+			return fmt.Errorf("error while processing stdin: %w", err)
 		}
 		// We print to log because we usually want this to be quiet
 		// as we may run it every time we hit ENTER in a bash prompt.

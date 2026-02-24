@@ -20,7 +20,6 @@ package llog
 
 import (
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 )
@@ -50,11 +49,11 @@ func New(verbosity int) *Logger {
 
 	switch verbosity {
 	case SILENT:
-		infOut = ioutil.Discard
-		debOut = ioutil.Discard
+		infOut = io.Discard
+		debOut = io.Discard
 	case INFO:
 		infOut = os.Stderr
-		debOut = ioutil.Discard
+		debOut = io.Discard
 	case DEBUG:
 		infOut = os.Stderr
 		debOut = os.Stderr
@@ -62,7 +61,7 @@ func New(verbosity int) *Logger {
 		infMod = log.Ldate | log.Ltime | log.Lshortfile
 	default:
 		infOut = os.Stderr
-		debOut = ioutil.Discard
+		debOut = io.Discard
 	}
 
 	// std is used for logging fatal errors

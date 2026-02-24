@@ -202,7 +202,10 @@ var parseExportLineExt = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_-]*) ([a-zA-Z
 // because they already exist. It reports the results in a sentence (stats
 // string) because we don't anything fancier currently.
 func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir string) (stats string, e error) {
-	tx, _ := d.Begin()
+	tx, err := d.Begin()
+	if err != nil {
+		return "", fmt.Errorf("begin transaction: %w", err)
+	}
 	stmt := tx.Stmt(d.insert)
 	total, failed := 0, 0
 	var once sync.Once
@@ -248,7 +251,11 @@ func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir s
 				lineUser = args[1]
 				lineHost = args[2]
 				linePid = args[3]
-				lineCwd, _ = url.PathUnescape(args[4])
+				lineCwd, err = url.PathUnescape(args[4])
+				if err != nil {
+					log.Info.Printf("Warning: could not unescape workdir %q, using raw value: %v", args[4], err)
+					lineCwd = args[4]
+				}
 				lineCommand = strings.TrimSuffix(args[6], "\n")
 			} else {
 				// Try old export format (4 fields):
@@ -292,7 +299,9 @@ func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir s
 			}
 		}
 	}
-	tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit transaction: %w", err)
+	}
 	total--
 	stats = fmt.Sprintf("Processed %d entries, successful %d, failed %d.", total, total-failed, failed)
 	return stats, nil
@@ -301,31 +310,36 @@ func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir s
 // LogConn logs the remote's IP address and connection time into connlog table.
 // Also if it can't find a reverse lookup for the IP address inside table rlookup,
 // it performs it asynchronously. Reverse lookup may fail, but we don't care.
-func (d Database) LogConn(remote net.Addr) (err error) {
+func (d Database) LogConn(remote net.Addr) error {
 	t := time.Now()
 	// Find IP
-	if ip, _, err := net.SplitHostPort(remote.String()); err == nil {
-		// Store IP and datetime
-		_, err = d.Exec(`INSERT INTO connlog VALUES (?, ?);`, t, ip)
-		if err == nil {
-			// Perform a reverse lookup if needed.
-			go func() {
-				var rip string
-				err = d.QueryRow("SELECT ip FROM rlookup WHERE ip LIKE ?", ip).Scan(&rip)
-				if err == sql.ErrNoRows {
-					if addr, err := net.LookupAddr(ip); err == nil {
-						_, err = d.Exec(`INSERT INTO rlookup(ip, reverse)
-                                                           VALUES(? ,?)`,
-							ip, strings.Join(addr, ","))
-					}
-				}
-				if err != nil {
-					log.Info.Println(err)
-				}
-			}()
-		}
+	ip, _, err := net.SplitHostPort(remote.String())
+	if err != nil {
+		return err
 	}
-	return
+	// Store IP and datetime
+	_, err = d.Exec(`INSERT INTO connlog VALUES (?, ?);`, t, ip)
+	if err != nil {
+		return err
+	}
+	// Perform a reverse lookup if needed.
+	go func() {
+		var rip string
+		lookupErr := d.QueryRow("SELECT ip FROM rlookup WHERE ip LIKE ?", ip).Scan(&rip)
+		if lookupErr == sql.ErrNoRows {
+			if addr, lookupErr := net.LookupAddr(ip); lookupErr == nil {
+				_, lookupErr = d.Exec(`INSERT INTO rlookup(ip, reverse)
+                                                           VALUES(? ,?)`,
+					ip, strings.Join(addr, ","))
+				if lookupErr != nil {
+					log.Info.Println(lookupErr)
+				}
+			}
+		} else if lookupErr != nil {
+			log.Info.Println(lookupErr)
+		}
+	}()
+	return nil
 }
 
 // migrate is a unexported function that handles database migrations.

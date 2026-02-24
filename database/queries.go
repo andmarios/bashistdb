@@ -27,7 +27,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -66,10 +65,15 @@ func (d Database) TopK(qp conf.QueryParams) ([]byte, error) {
 	for rows.Next() {
 		var command string
 		var count int
-		rows.Scan(&command, &count)
+		if err := rows.Scan(&command, &count); err != nil {
+			return []byte{}, fmt.Errorf("scan error in TopK: %w", err)
+		}
 		res.AddCountRow(count, command)
 	}
-	return res.Formatted(), err
+	if err := rows.Err(); err != nil {
+		return []byte{}, fmt.Errorf("rows iteration error in TopK: %w", err)
+	}
+	return res.Formatted(), nil
 }
 
 // LastK returns the k most recent command lines in history
@@ -107,8 +111,13 @@ func (d Database) LastK(qp conf.QueryParams) ([]byte, error) {
 		var user, host, command, shellpid, workdir string
 		var t time.Time
 		var row int
-		rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir)
+		if err := rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir); err != nil {
+			return []byte{}, fmt.Errorf("scan error in LastK: %w", err)
+		}
 		res.AddRow(row, user, host, command, shellpid, workdir, t)
+	}
+	if err := rows.Err(); err != nil {
+		return []byte{}, fmt.Errorf("rows iteration error in LastK: %w", err)
 	}
 	return res.Formatted(), nil
 }
@@ -158,7 +167,9 @@ func (d Database) DefaultQuery(qp conf.QueryParams) ([]byte, error) {
 		var user, host, command, shellpid, workdir string
 		var t time.Time
 		var row int
-		rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir)
+		if err := rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir); err != nil {
+			return nil, fmt.Errorf("scan error in DefaultQuery: %w", err)
+		}
 		switch qp.Regex {
 		case true:
 			if regex.MatchString(command) {
@@ -167,6 +178,9 @@ func (d Database) DefaultQuery(qp conf.QueryParams) ([]byte, error) {
 		default:
 			res.AddRow(row, user, host, command, shellpid, workdir, t)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error in DefaultQuery: %w", err)
 	}
 	// Return the result without the newline at the end.
 	return res.Formatted(), nil
@@ -201,7 +215,7 @@ func (d Database) Users(qp conf.QueryParams) (res []byte, e error) {
 	filterClause, filterArgs := sessionWorkdirFilter(qp)
 	args := append([]interface{}{qp.User, qp.Host, qp.Command}, filterArgs...)
 	var result bytes.Buffer
-	result.WriteString(fmt.Sprintf("Unique user-hosts pairs:"))
+	result.WriteString("Unique user-hosts pairs:")
 	rows, e := d.Query(`SELECT distinct(user), host FROM history
                                WHERE user LIKE ? AND host LIKE ? AND command LIKE ? ESCAPE '\'`+filterClause,
 		args...)
@@ -213,10 +227,15 @@ func (d Database) Users(qp conf.QueryParams) (res []byte, e error) {
 	for rows.Next() {
 		var user string
 		var host string
-		rows.Scan(&user, &host)
+		if err := rows.Scan(&user, &host); err != nil {
+			return result.Bytes(), fmt.Errorf("scan error in Users: %w", err)
+		}
 		result.WriteString(fmt.Sprintf("\n%s@%s", user, host))
 	}
-	return result.Bytes(), e
+	if err := rows.Err(); err != nil {
+		return result.Bytes(), fmt.Errorf("rows iteration error in Users: %w", err)
+	}
+	return result.Bytes(), nil
 }
 
 // Demo returns some stats from the database to showcase bashistdb.
@@ -284,10 +303,11 @@ func (d Database) ReturnRow(qp conf.QueryParams) ([]byte, error) {
 // DeleteRows deletes a range of rows.
 func (d Database) DeleteRows(qp conf.QueryParams) ([]byte, error) {
 	tx, err := d.Begin()
-	defer tx.Rollback()
 	if err != nil {
 		return []byte{}, err
 	}
+	defer tx.Rollback()
+
 	stmt, err := tx.Prepare(`DELETE FROM history WHERE rowid=?`)
 	if err != nil {
 		return []byte{}, err
@@ -299,7 +319,9 @@ func (d Database) DeleteRows(qp conf.QueryParams) ([]byte, error) {
 			return []byte{}, err
 		}
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return []byte{}, fmt.Errorf("commit error in DeleteRows: %w", err)
+	}
 	return []byte("No errors during deletion."), nil
 }
 
@@ -341,7 +363,9 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 	for rows.Next() {
 		var t time.Time
 		var command string
-		rows.Scan(&t, &command)
+		if err := rows.Scan(&t, &command); err != nil {
+			return nil, fmt.Errorf("scan error in ContentQuery stage 1: %w", err)
+		}
 		switch qp.Regex {
 		case true:
 			if regex.MatchString(command) {
@@ -351,6 +375,9 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 			hits = append(hits, t)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error in ContentQuery stage 1: %w", err)
+	}
 
 	// Stage 2: for each match create a slice with its content by rowid
 	var hitsContent [][]int
@@ -359,7 +386,7 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 		// Before query also includes the current command, thus is always run.
 		beforeArgs := append([]interface{}{v, qp.User, qp.Host}, filterArgs...)
 		beforeArgs = append(beforeArgs, qp.BeforeContent+1)
-		rows, err = d.Query(`SELECT rowid, datetime FROM
+		beforeRows, err := d.Query(`SELECT rowid, datetime FROM
                                       (SELECT rowid, datetime FROM history
 	                                     WHERE datetime <= ? AND user LIKE ? AND host LIKE ? ESCAPE '\'`+filterClause+`
                                          ORDER BY datetime DESC LIMIT ?)
@@ -368,37 +395,55 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
-		for rows.Next() {
+		for beforeRows.Next() {
 			var row int
 			var datetime time.Time
-			rows.Scan(&row, &datetime)
+			if err := beforeRows.Scan(&row, &datetime); err != nil {
+				beforeRows.Close()
+				return nil, fmt.Errorf("scan error in ContentQuery stage 2 before: %w", err)
+			}
 			content = append(content, row)
 		}
+		if err := beforeRows.Err(); err != nil {
+			beforeRows.Close()
+			return nil, fmt.Errorf("rows iteration error in ContentQuery stage 2 before: %w", err)
+		}
+		beforeRows.Close()
+
 		// After runs only if needed.
 		if qp.AfterContent > 0 {
 			afterArgs := append([]interface{}{v, qp.User, qp.Host}, filterArgs...)
 			afterArgs = append(afterArgs, qp.AfterContent)
-			rows, err = d.Query(`SELECT rowid, datetime FROM history
+			afterRows, err := d.Query(`SELECT rowid, datetime FROM history
 	                                         WHERE datetime > ? AND user LIKE ? AND host LIKE ? ESCAPE '\'`+filterClause+`
                                              ORDER BY datetime ASC LIMIT ?`,
 				afterArgs...)
 			if err != nil {
 				return nil, err
 			}
-			defer rows.Close()
-			for rows.Next() {
+			for afterRows.Next() {
 				var row int
 				var datetime time.Time
-				rows.Scan(&row, &datetime)
+				if err := afterRows.Scan(&row, &datetime); err != nil {
+					afterRows.Close()
+					return nil, fmt.Errorf("scan error in ContentQuery stage 2 after: %w", err)
+				}
 				content = append(content, row)
 			}
+			if err := afterRows.Err(); err != nil {
+				afterRows.Close()
+				return nil, fmt.Errorf("rows iteration error in ContentQuery stage 2 after: %w", err)
+			}
+			afterRows.Close()
 		}
 		hitsContent = append(hitsContent, content)
 	}
 
 	// Stage 3: let's merge the sets that overlap
 	for i := len(hitsContent) - 2; i >= 0; i-- {
+		if len(hitsContent[i+1]) == 0 {
+			continue
+		}
 		for k, v := range hitsContent[i] {
 			if v == hitsContent[i+1][0] {
 				hitsContent[i] = append(hitsContent[i][:k], hitsContent[i+1]...)
@@ -416,26 +461,37 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 
 	// Stage 4: get the tuples for each set's rowids and add them formatted to the result
 	for i := 0; i < len(hitsContent); i++ {
-		var rowids []string
-		for _, v := range hitsContent[i] {
-			rowids = append(rowids, strconv.Itoa(v))
+		// Build parameterized query with placeholders
+		placeholders := make([]string, len(hitsContent[i]))
+		queryArgs := make([]interface{}, len(hitsContent[i]))
+		for j, v := range hitsContent[i] {
+			placeholders[j] = "?"
+			queryArgs[j] = v
 		}
-		rows, err = d.Query(`SELECT rowid, * FROM history
-                                  WHERE rowid IN (` + strings.Join(rowids, ",") + `)
-                                  ORDER BY datetime ASC`)
+		stage4Rows, err := d.Query(`SELECT rowid, * FROM history
+                                  WHERE rowid IN (`+strings.Join(placeholders, ",")+`)
+                                  ORDER BY datetime ASC`, queryArgs...)
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
 
 		res := result.New(qp.Format)
-		for rows.Next() {
+		for stage4Rows.Next() {
 			var user, host, command, shellpid, workdir string
 			var t time.Time
 			var row int
-			rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir)
+			if err := stage4Rows.Scan(&row, &user, &host, &command, &t, &shellpid, &workdir); err != nil {
+				stage4Rows.Close()
+				return nil, fmt.Errorf("scan error in ContentQuery stage 4: %w", err)
+			}
 			res.AddRow(row, user, host, command, shellpid, workdir, t)
 		}
+		if err := stage4Rows.Err(); err != nil {
+			stage4Rows.Close()
+			return nil, fmt.Errorf("rows iteration error in ContentQuery stage 4: %w", err)
+		}
+		stage4Rows.Close()
+
 		out.Write(res.Formatted())
 		if i < len(hitsContent)-1 {
 			out.WriteString("\n------------------\n")

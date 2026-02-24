@@ -130,8 +130,8 @@ func parseCustomFlags() {
 	}
 
 	// Detect if there are data coming from stdin:
-	stats, _ := os.Stdin.Stat()
-	if (stats.Mode() & os.ModeCharDevice) != os.ModeCharDevice {
+	stats, err := os.Stdin.Stat()
+	if err == nil && (stats.Mode()&os.ModeCharDevice) != os.ModeCharDevice {
 		stdinSet = true
 	}
 }

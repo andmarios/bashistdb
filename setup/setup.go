@@ -21,8 +21,7 @@ Package setup provides functions to setup your system for bashistdb.
 package setup
 
 import (
-	"errors"
-	"io/ioutil"
+	"fmt"
 	"os"
 
 	conf "github.com/andmarios/bashistdb/configuration"
@@ -51,28 +50,28 @@ func Apply(write bool) error {
 	bashrc := os.Getenv("HOME") + "/.bashrc"
 	f, err := os.OpenFile(bashrc, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
-		return errors.New("Could not open bashrc: " + err.Error())
+		return fmt.Errorf("could not open bashrc: %w", err)
 	}
 	defer f.Close()
 
 	if _, err = f.WriteString(appendLines); err != nil {
-		return errors.New("Could not write bashrc: " + err.Error())
+		return fmt.Errorf("could not write bashrc: %w", err)
 	}
 	log.Println("Updated " + bashrc + ", appended: \n" + appendLines)
 
 	// Convert bash_history
 	if write {
 		bashHistory := os.Getenv("HOME") + "/.bash_history"
-		historyIn, err := ioutil.ReadFile(bashHistory)
+		historyIn, err := os.ReadFile(bashHistory)
 		if err != nil {
-			return errors.New("Could not read bash_history: " + err.Error())
+			return fmt.Errorf("could not read bash_history: %w", err)
 		}
 
 		historyOut := timestamp.Convert(historyIn, 12)
 
-		err = ioutil.WriteFile(bashHistory, historyOut, 0600)
+		err = os.WriteFile(bashHistory, historyOut, 0600)
 		if err != nil {
-			return errors.New("Could not write bash_history: " + err.Error())
+			return fmt.Errorf("could not write bash_history: %w", err)
 		}
 		log.Println("Updated " + bashHistory)
 	}

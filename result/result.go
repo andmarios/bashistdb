@@ -98,8 +98,12 @@ func (r Result) AddRow(row int, user, host, command, shellpid, workdir string, d
 	case conf.FORMAT_LOG:
 		f = fmt.Sprintf(FORMAT_LOG_S, datetime.Format(RFC3339alt), user, host, workdir, command)
 	case conf.FORMAT_JSON:
-		b, _ := json.Marshal(rowJSON{row, datetime.Format(RFC3339alt), user, host, command, shellpid, workdir})
-		_, _ = r.out.Write(b)
+		b, err := json.Marshal(rowJSON{row, datetime.Format(RFC3339alt), user, host, command, shellpid, workdir})
+		if err != nil {
+			_, _ = r.out.WriteString(fmt.Sprintf(`{"error": "json marshal failed: %s"}`, err.Error()))
+		} else {
+			_, _ = r.out.Write(b)
+		}
 		f = ""
 	case conf.FORMAT_EXPORT:
 		pid := shellpid
@@ -124,7 +128,7 @@ func (r Result) AddRow(row int, user, host, command, shellpid, workdir string, d
 
 // Formatted returns the result in the desired format after performing any necessary adjustment.
 func (r Result) Formatted() []byte {
-	if conf.QParams.Format == conf.FORMAT_JSON {
+	if r.format == conf.FORMAT_JSON {
 		r.out.WriteString("\n]")
 	}
 	return r.out.Bytes()

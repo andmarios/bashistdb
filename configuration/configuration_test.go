@@ -38,7 +38,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"testing"
 )
@@ -230,7 +230,7 @@ func TestParse(t *testing.T) {
 		}
 	}
 
-	PrintHelp(ioutil.Discard)
+	PrintHelp(io.Discard)
 
 }
 

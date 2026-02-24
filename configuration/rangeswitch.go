@@ -25,6 +25,11 @@ import (
 	"strings"
 )
 
+var (
+	rangeSingle = regexp.MustCompile("^[0-9]+$")
+	rangeSpace  = regexp.MustCompile("^[0-9]+-[0-9]+$")
+)
+
 // parseRange creates a sorted and uniqued []int by parsing arguments like:
 // 12,34-56,1023,80
 // So if given '1,5-9,6,120,11' it will return: [ 1 5 6 7 8 9 11 120 ]
@@ -32,16 +37,13 @@ func parseRange(arg string) ([]int, error) {
 	args := strings.Split(arg, ",")
 	var nums []int
 
-	single := regexp.MustCompile("^[0-9]+$")
-	space := regexp.MustCompile("^[0-9]+-[0-9]+$")
-
 	errs := make([]error, 2)
 	var i, b1, b2 int
 	for _, v := range args {
-		if ok := single.MatchString(v); ok { // single number
+		if ok := rangeSingle.MatchString(v); ok { // single number
 			i, errs[0] = strconv.Atoi(v)
 			nums = append(nums, i)
-		} else if ok = space.MatchString(v); ok { // range numbers
+		} else if ok = rangeSpace.MatchString(v); ok { // range numbers
 			bounds := strings.Split(v, "-")
 			b1, errs[0] = strconv.Atoi(bounds[0])
 			b2, errs[1] = strconv.Atoi(bounds[1])

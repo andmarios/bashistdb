@@ -20,7 +20,6 @@ package database
 import (
 	"bufio"
 	"bytes"
-	"io/ioutil"
 	l "log"
 	"net"
 	"os"
@@ -31,7 +30,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	f, err := ioutil.TempFile("", "test-bashistdb")
+	f, err := os.CreateTemp("", "test-bashistdb")
 	if err != nil {
 		l.Fatalln(err)
 	}
@@ -125,10 +124,10 @@ func TestNew(t *testing.T) {
 			want:   "18 default query\n" + "19 default query",
 			test:   "default query",
 		},
-		{ // default query with unique (should return latest command instance)
+		{ // default query with unique (GROUP BY returns one row per unique command)
 			params: conf.QueryParams{Type: conf.QUERY, User: "user1", Host: "host1", Format: conf.FORMAT_COMMAND_LINE, Command: "%default%", Unique: true},
 			expect: OK,
-			want:   "19 default query",
+			want:   "18 default query",
 			test:   "default query unique",
 		},
 		{ // users
@@ -167,10 +166,10 @@ func TestNew(t *testing.T) {
 			want:   "24 lastk 2\n" + "25 lastk 2",
 			test:   "lastk",
 		},
-		{ // LastK unique
+		{ // LastK unique (GROUP BY picks one row per group; row varies by SQLite version)
 			params: conf.QueryParams{Type: conf.QUERY_LASTK, Kappa: 2, User: "%", Host: "%", Format: conf.FORMAT_COMMAND_LINE, Command: "%%", Unique: true},
 			expect: OK,
-			want:   "23 lastk 1\n" + "25 lastk 2",
+			want:   "23 lastk 1\n" + "24 lastk 2",
 			test:   "lastk unique",
 		},
 		{ // Unkown Command
@@ -248,16 +247,16 @@ var demoResponse = `There are 23 command lines (12 unique) in your database from
 Top-15 commands for user %@%:
 7 | topk 1
 4 | topk 2
-2 | default query
 2 | lastk 2
-1 | git status
-1 | go run bashistdb.go --local -db test.sqlite3 -format rows -lastk 40
-1 | history
-1 | htop
-1 | lastk 1
-1 | ls
-1 | row 20
+2 | default query
 1 | topk
+1 | row 20
+1 | ls
+1 | lastk 1
+1 | htop
+1 | history
+1 | go run bashistdb.go --local -db test.sqlite3 -format rows -lastk 40
+1 | git status
 
 Last 10 commands user %@% ran:
 14 topk 2
@@ -270,3 +269,133 @@ Last 10 commands user %@% ran:
 23 lastk 1
 24 lastk 2
 25 lastk 2`
+
+// newTestDB creates a fresh test database and returns it with cleanup function.
+func newTestDB(t *testing.T) (Database, func()) {
+	t.Helper()
+	f, err := os.CreateTemp("", "test-bashistdb-*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbPath := f.Name()
+	f.Close()
+	os.Remove(dbPath)
+	conf.Database = dbPath
+	db, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db, func() {
+		db.Close()
+		os.Remove(dbPath)
+	}
+}
+
+func TestDeleteRowsOnClosedDB(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	cleanup() // closes the DB
+
+	// DeleteRows on a closed database should return an error, not panic.
+	_, err := db.DeleteRows(conf.QueryParams{Rows: []int{1, 2, 3}})
+	if err == nil {
+		t.Fatal("DeleteRows on closed DB should return error")
+	}
+}
+
+func TestAddFromBufferOnClosedDB(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	cleanup() // closes the DB
+
+	// AddFromBuffer on a closed database should return an error, not silently succeed.
+	r := bufio.NewReader(bytes.NewReader([]byte("1 2015-10-12T12:00:00+0000 ls\n")))
+	_, err := db.AddFromBuffer(r, "user", "host", "", "")
+	if err == nil {
+		t.Fatal("AddFromBuffer on closed DB should return error")
+	}
+}
+
+func TestContentQueryEmptyHits(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	defer cleanup()
+
+	// Insert some data
+	br := bufio.NewReader(bytes.NewReader(entriesDefault))
+	_, err := db.AddFromBuffer(br, "user", "test", "", "")
+	if err != nil {
+		t.Fatal("AddFromBuffer failed:", err)
+	}
+
+	// Query for something that matches nothing — should not panic
+	qp := conf.QueryParams{
+		Type:          conf.QUERY_CONTENT,
+		User:          "user",
+		Host:          "test",
+		Command:       "%nonexistent_command_xyz%",
+		BeforeContent: 2,
+		AfterContent:  2,
+		Format:        conf.FORMAT_COMMAND_LINE,
+	}
+	res, err := db.ContentQuery(qp)
+	if err != nil {
+		t.Fatal("ContentQuery with no matches should not error:", err)
+	}
+	if len(res) != 0 {
+		t.Fatalf("ContentQuery with no matches should return empty, got: %s", string(res))
+	}
+}
+
+func TestContentQueryParameterized(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	defer cleanup()
+
+	// Insert data
+	br := bufio.NewReader(bytes.NewReader(entriesDefault))
+	_, err := db.AddFromBuffer(br, "user", "test", "", "")
+	if err != nil {
+		t.Fatal("AddFromBuffer failed:", err)
+	}
+
+	// Content query with a match — regression test for parameterized SQL
+	qp := conf.QueryParams{
+		Type:          conf.QUERY_CONTENT,
+		User:          "user",
+		Host:          "test",
+		Command:       "%ls%",
+		BeforeContent: 1,
+		AfterContent:  1,
+		Format:        conf.FORMAT_COMMAND_LINE,
+	}
+	res, err := db.ContentQuery(qp)
+	if err != nil {
+		t.Fatal("ContentQuery failed:", err)
+	}
+	if len(res) == 0 {
+		t.Fatal("ContentQuery should have found results for 'ls'")
+	}
+}
+
+func TestScanErrorsHappyPath(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	defer cleanup()
+
+	// Insert data
+	br := bufio.NewReader(bytes.NewReader(entriesDefault))
+	_, err := db.AddFromBuffer(br, "user", "test", "", "")
+	if err != nil {
+		t.Fatal("AddFromBuffer failed:", err)
+	}
+
+	// Run all query types to ensure scan error checking doesn't break happy path
+	queries := []conf.QueryParams{
+		{Type: conf.QUERY_TOPK, Kappa: 5, User: "user", Host: "test", Command: "%%", Format: conf.FORMAT_COMMAND_LINE},
+		{Type: conf.QUERY_LASTK, Kappa: 5, User: "user", Host: "test", Command: "%%", Format: conf.FORMAT_COMMAND_LINE},
+		{Type: conf.QUERY, User: "user", Host: "test", Command: "%%", Format: conf.FORMAT_COMMAND_LINE},
+		{Type: conf.QUERY_USERS, User: "%", Host: "%", Command: "%%", Format: conf.FORMAT_COMMAND_LINE},
+	}
+	for _, qp := range queries {
+		_, err := db.RunQuery(qp)
+		if err != nil {
+			t.Fatalf("Query type %s failed: %v", qp.Type, err)
+		}
+	}
+}

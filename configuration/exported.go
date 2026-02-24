@@ -20,6 +20,7 @@ package configuration
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/andmarios/bashistdb/llog"
 )
@@ -109,16 +110,20 @@ const (
 	QUERY_LASTK   = "lastk"   // K most recent commands
 	QUERY_TOPK    = "topk"    // K most used commands
 	QUERY_USERS   = "users"   // users@host in database
-	QUERY_CLIENTS = "clients" // unique clients connected
 	QUERY_DEMO    = "demo"    // Run some demo queries
 	QUERY_ROW     = "row"     // Return a plain single row given its rowid
 	QUERY_CONTENT = "content" // Content search (n lines before, after or both)
-	QUERY_SESSION = "session" // Commands from a specific shell session
 	DELETE        = "delete"  // Delete rows given their rowid
 )
 
 // We do this in order to be able to test the parse code (we can't test init).
+// In test mode (BASHISTDB_TEST set), skip init parsing to avoid Go test flag conflicts.
+// Tests call resetFlags() + parse() themselves with controlled os.Args.
 func init() {
+	if os.Getenv("BASHISTDB_TEST") != "" {
+		Log = llog.New(0)
+		return
+	}
 	if err := parse(); err != nil {
 		Mode = MODE_ERROR
 		Error = err

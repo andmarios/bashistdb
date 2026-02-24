@@ -32,8 +32,12 @@ func Convert(history []byte, months int) []byte {
 	var out bytes.Buffer
 	for i := 0; i < len(lines); i++ {
 		if hasTimestamp.MatchString(lines[i]) { // Timestamped, just copy
-			out.WriteString(fmt.Sprintf("%s\n%s\n", lines[i], lines[i+1]))
-			i++
+			if i+1 < len(lines) {
+				out.WriteString(fmt.Sprintf("%s\n%s\n", lines[i], lines[i+1]))
+				i++
+			} else {
+				out.WriteString(fmt.Sprintf("%s\n", lines[i]))
+			}
 			continue
 		}
 		if lines[i] != "" { // Line not timestamped and not empty?

@@ -23,9 +23,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"os"
+	"time"
 
 	conf "github.com/andmarios/bashistdb/configuration"
 	"github.com/andmarios/bashistdb/database"
@@ -80,6 +81,7 @@ func ServerMode() error {
 		conn, err := s.Accept()
 		if err != nil {
 			log.Info.Println("ERROR:", err.Error())
+			continue
 		}
 		log.Info.Printf("Connection from %s.\n", conn.RemoteAddr())
 		err = db.LogConn(conn.RemoteAddr())
@@ -105,7 +107,7 @@ func ClientMode() error {
 	switch conf.Operation {
 	case conf.OP_IMPORT: // If Operation == OP_IMPORT, attempt to read from Stdin
 		r := bufio.NewReader(os.Stdin)
-		history, err := ioutil.ReadAll(r)
+		history, err := io.ReadAll(r)
 		if err != nil {
 			return err
 		}
@@ -128,8 +130,12 @@ func ClientMode() error {
 	}
 	log.Info.Println("Sent request.")
 
+	conn.SetDeadline(time.Now().Add(60 * time.Second))
 	reply, err := receiveDecrypt(conn)
 	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return fmt.Errorf("server did not respond within 60 seconds")
+		}
 		return err
 	}
 
@@ -150,11 +156,18 @@ func ClientMode() error {
 func handleConn(conn net.Conn) {
 	defer conn.Close()
 
+	// Deadline for reading the client message.
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
 	msg, err := receiveDecrypt(conn)
 	if err != nil {
 		log.Info.Println(err, "["+conn.RemoteAddr().String()+"]")
 		return
 	}
+
+	// Clear deadline during processing (imports may take a while).
+	conn.SetDeadline(time.Time{})
+
 	if msg.Version != version.Version {
 		log.Info.Println("Client runs different bashistdb version from server:", msg.Version)
 	}
@@ -179,6 +192,9 @@ func handleConn(conn net.Conn) {
 		log.Info.Printf("Client sent %s query for '%s' as '%s'@'%s', '%s' format.\n",
 			msg.Type, msg.QParams.User, msg.QParams.Host, msg.QParams.Command, msg.QParams.Format)
 	}
+
+	// Deadline for writing the reply.
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	reply := Message{Type: RESULT, Payload: result, Version: version.Version}
 	if msg.Type == HISTORY {

@@ -1,4 +1,4 @@
-// +build lowmem
+//go:build lowmem
 
 // Copyright (c) 2015-2026, Marios Andreopoulos.
 //

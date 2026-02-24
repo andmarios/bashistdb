@@ -20,59 +20,61 @@ package configuration
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io/ioutil"
+	"os"
 )
 
 // exportFields is a struct used to export some
 // configuration variables to JSON and then to a
 // file
 type exportFields struct {
-	Database string
-	Remote   string
-	Port     string
-	Key      string
+	Database string `json:"database"`
+	Remote   string `json:"remote"`
+	Port     string `json:"port"`
+	Key      string `json:"key"`
 }
 
 // Read configuration file, overrides environment variables.
 func readConfFile() error {
-	// Try to load settings from configuration file (if exists)
-	if c, err := ioutil.ReadFile(confFile); err == nil {
-		e := &exportFields{}
-		if err = json.Unmarshal(c, e); err == nil {
-			if e.Database != "" {
-				database = e.Database
-			}
-			if e.Remote != "" {
-				remote = e.Remote
-			}
-			if e.Port != "" {
-				port = e.Port
-			}
-			if e.Key != "" {
-				passphrase = e.Key
-			}
-			foundConfFile = true
-		} else {
-			return errors.New("Could not parse configuration file: " +
-				err.Error())
+	c, err := os.ReadFile(confFile)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
+		return err
 	}
+	e := &exportFields{}
+	if err = json.Unmarshal(c, e); err != nil {
+		return errors.New("Could not parse configuration file: " +
+			err.Error())
+	}
+	if e.Database != "" {
+		database = e.Database
+	}
+	if e.Remote != "" {
+		remote = e.Remote
+	}
+	if e.Port != "" {
+		port = e.Port
+	}
+	if e.Key != "" {
+		passphrase = e.Key
+	}
+	foundConfFile = true
 	return nil
 }
 
-// Write configuration file, pretty prints JSON instead of just Marshal
+// Write configuration file using proper JSON encoding.
 func writeConfFile() error {
-	conf := fmt.Sprintf(`{
-"database": %#v,
-"remote"  : %#v,
-"port"    : %#v,
-"key"     : %#v
-}
-`, Database, remote, port, string(Key))
-	err := ioutil.WriteFile(confFile, []byte(conf), 0600)
+	conf := exportFields{
+		Database: Database,
+		Remote:   remote,
+		Port:     port,
+		Key:      string(Key),
+	}
+	data, err := json.MarshalIndent(conf, "", "  ")
 	if err != nil {
 		return err
 	}
-	return nil
+	data = append(data, '\n')
+	return os.WriteFile(confFile, data, 0600)
 }

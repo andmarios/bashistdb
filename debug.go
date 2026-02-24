@@ -1,4 +1,4 @@
-// +build debug
+//go:build debug
 
 package main
 
@@ -12,7 +12,7 @@ import (
 
 func init() {
 	if conf.Mode == conf.MODE_SERVER { // Currently debug only needed for server
-		Version += "-pprof"
+		v += "-pprof"
 		// Set up debug server
 		go func() {
 			fmt.Println(http.ListenAndServe("localhost:6060", nil))
