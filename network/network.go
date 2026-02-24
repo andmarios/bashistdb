@@ -76,7 +76,7 @@ func ServerMode() error {
 	if err != nil {
 		return err
 	}
-	log.Info.Println("Started listening on:", conf.Address)
+	log.Info.Println("bashistdb", version.Version, "listening on:", conf.Address)
 	for {
 		conn, err := s.Accept()
 		if err != nil {
