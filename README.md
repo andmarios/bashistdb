@@ -57,9 +57,14 @@ needed manually.
 In order to set up your bash to log and report RFC3339 timestamps, run:
 
     $ export HISTTIMEFORMAT="%FT%T%z "
-    $ echo 'HISTTIMEFORMAT="%FT%T%z "' >> ~/.bash_rc
-    $ export PROMPT_COMMAND="${PROMPT_COMMAND}; (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"
-    $ echo 'export PROMPT_COMMAND="${PROMPT_COMMAND}; (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"' >> ~/.bashrc
+    $ echo 'export HISTTIMEFORMAT="%FT%T%z "' >> ~/.bashrc
+
+Add to your ~/.bashrc (safe to source multiple times):
+
+    if [[ "$PROMPT_COMMAND" != *"bashistdb"* ]]; then
+        [ -n "${PROMPT_COMMAND}" ] && PROMPT_COMMAND="${PROMPT_COMMAND};"
+        export PROMPT_COMMAND="${PROMPT_COMMAND} (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"
+    fi
 
 Add distinct timestamps to your current bash_history:
 

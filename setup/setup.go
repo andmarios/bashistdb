@@ -30,8 +30,10 @@ import (
 )
 
 const appendLines = `export HISTTIMEFORMAT="%FT%T%z "
-[ ! -z "${PROMPT_COMMAND}" ] && export PROMPT_COMMAND="${PROMPT_COMMAND};"
-export PROMPT_COMMAND="${PROMPT_COMMAND} (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"
+if [[ "$PROMPT_COMMAND" != *"bashistdb"* ]]; then
+    [ -n "${PROMPT_COMMAND}" ] && PROMPT_COMMAND="${PROMPT_COMMAND};"
+    export PROMPT_COMMAND="${PROMPT_COMMAND} (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"
+fi
 `
 
 var log *llog.Logger
