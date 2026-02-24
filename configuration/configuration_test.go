@@ -73,7 +73,14 @@ func resetFlags(args ...string) {
 	uniqueSet = false
 	usersSet = false
 	row = 0
+	delRows = ""
 	regexSet = false
+	afterContent = 5
+	beforeContent = 5
+	content = 5
+	session = ""
+	workdirQuery = ""
+	fuzzySet = false
 	// Here we will store the non flag arguments //
 	// These are not parsed from flags but we set them with flag.Visit
 	userSet = false
@@ -82,6 +89,12 @@ func resetFlags(args ...string) {
 	topkSet = false
 	lastkSet = false
 	rowSet = false
+	delRowsSet = false
+	afterContentSet = false
+	beforeContentSet = false
+	contentSet = false
+	sessionSet = false
+	workdirSet = false
 	// These are set with manual searches
 	querySet = false
 	stdinSet = false
@@ -203,6 +216,30 @@ func TestParse(t *testing.T) {
 			input:  []string{"cmd", "-s", "-k", "pass", "-h"},
 			test:   "Test help flag: ",
 		},
+		{
+			want: exportedVars{Mode: MODE_LOCAL, Operation: OP_QUERY, Address: "", Database: "test.sqlite3", User: "test", Hostname: "test",
+				QParams: QueryParams{Type: QUERY_FUZZY, User: "test", Host: "test", Format: FORMAT_DEFAULT, Command: "git commit", Fuzzy: true, Kappa: 25}},
+			expect: OK,
+			input:  []string{"cmd", "-F", "git", "commit"},
+			test:   "Test fuzzy search: ",
+		},
+		{
+			want: exportedVars{Mode: MODE_LOCAL, Operation: OP_QUERY, Address: "", Database: "test.sqlite3", User: "test", Hostname: "test",
+				QParams: QueryParams{Type: QUERY_FUZZY, User: "test", Host: "test", Format: FORMAT_DEFAULT, Command: "git", Fuzzy: true, Kappa: 10}},
+			expect: OK,
+			input:  []string{"cmd", "-F", "-lastk", "10", "git"},
+			test:   "Test fuzzy with lastk limit: ",
+		},
+		{
+			expect: ER,
+			input:  []string{"cmd", "-F", "-topk", "5", "git"},
+			test:   "Test fuzzy and topk incompatibility: ",
+		},
+		{
+			expect: ER,
+			input:  []string{"cmd", "-F", "-R", "git"},
+			test:   "Test fuzzy and regex incompatibility: ",
+		},
 	}
 
 	// Test remote override by server (remote set by env or conf file)
@@ -293,6 +330,9 @@ func compare(v exportedVars) error {
 	}
 	if !compareIntSlice(QParams.Rows, v.QParams.Rows) {
 		s += fmt.Sprintf("QParams.Rows wrong. Wanted %v, got %v.\n", v.QParams.Rows, QParams.Rows)
+	}
+	if QParams.Fuzzy != v.QParams.Fuzzy {
+		s += fmt.Sprintf("QParams.Fuzzy wrong. Wanted %v, got %v.\n", v.QParams.Fuzzy, QParams.Fuzzy)
 	}
 
 	if s != "" {

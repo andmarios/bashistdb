@@ -43,10 +43,10 @@ func init() {
 }
 
 // Apply configures your system to use bashistdb:
-// 1. It appends to your ~/.bashrc two lines to make your history timestamped
-//    and your prompt send your commands to bashistdb.
-// 2. It (optionally) adds timestamps to your current history file, so it can
-//    be used with bashistdb. This step is also safe to run many times.
+//  1. It appends to your ~/.bashrc two lines to make your history timestamped
+//     and your prompt send your commands to bashistdb.
+//  2. It (optionally) adds timestamps to your current history file, so it can
+//     be used with bashistdb. This step is also safe to run many times.
 func Apply(write bool) error {
 	// Setup bashrc for bashistdb
 	bashrc := os.Getenv("HOME") + "/.bashrc"

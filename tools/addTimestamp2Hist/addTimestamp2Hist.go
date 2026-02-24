@@ -4,14 +4,13 @@ bash history file. You may choose the starting date as X months
 before now. Then the utility will add timestamps at equal
 intervals for every line in history.
 
-    $ addTimestamp2Hist ~/.bash_history
+	$ addTimestamp2Hist ~/.bash_history
 */
 package main
 
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -31,7 +30,7 @@ var (
 func main() {
 	flag.Parse()
 
-	historyIn, err := ioutil.ReadFile(*historyFile)
+	historyIn, err := os.ReadFile(*historyFile)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -40,7 +39,7 @@ func main() {
 	if !*write {
 		fmt.Println(string(historyOut))
 	} else {
-		err = ioutil.WriteFile(*historyFile, historyOut, 0600)
+		err = os.WriteFile(*historyFile, historyOut, 0600)
 
 		if err != nil {
 			fmt.Println(err)

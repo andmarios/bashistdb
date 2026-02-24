@@ -28,7 +28,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc
 
       - name: Generate version
-        run: go generate ./...
+        run: |
+          go generate ./...
+          gofmt -w version.go
 
       - name: Check formatting
         run: |

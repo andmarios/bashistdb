@@ -130,7 +130,7 @@ func ClientMode() error {
 	}
 	log.Info.Println("Sent request.")
 
-	conn.SetDeadline(time.Now().Add(60 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(60 * time.Second))
 	reply, err := receiveDecrypt(conn)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -157,7 +157,7 @@ func handleConn(conn net.Conn) {
 	defer conn.Close()
 
 	// Deadline for reading the client message.
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	msg, err := receiveDecrypt(conn)
 	if err != nil {
@@ -166,7 +166,7 @@ func handleConn(conn net.Conn) {
 	}
 
 	// Clear deadline during processing (imports may take a while).
-	conn.SetDeadline(time.Time{})
+	_ = conn.SetDeadline(time.Time{})
 
 	if msg.Version != version.Version {
 		log.Info.Println("Client runs different bashistdb version from server:", msg.Version)
@@ -194,7 +194,7 @@ func handleConn(conn net.Conn) {
 	}
 
 	// Deadline for writing the reply.
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	reply := Message{Type: RESULT, Payload: result, Version: version.Version}
 	if msg.Type == HISTORY {

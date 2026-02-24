@@ -31,6 +31,7 @@ import (
 	"time"
 
 	conf "github.com/andmarios/bashistdb/configuration"
+	"github.com/andmarios/bashistdb/fuzzy"
 	"github.com/andmarios/bashistdb/result"
 )
 
@@ -205,6 +206,8 @@ func (d Database) RunQuery(p conf.QueryParams) ([]byte, error) {
 		return d.DeleteRows(p)
 	case conf.QUERY_CONTENT:
 		return d.ContentQuery(p)
+	case conf.QUERY_FUZZY:
+		return d.FuzzyQuery(p)
 	}
 
 	return []byte{}, errors.New("Unknown query type.")
@@ -306,7 +309,7 @@ func (d Database) DeleteRows(qp conf.QueryParams) ([]byte, error) {
 	if err != nil {
 		return []byte{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.Prepare(`DELETE FROM history WHERE rowid=?`)
 	if err != nil {
@@ -498,4 +501,58 @@ func (d Database) ContentQuery(qp conf.QueryParams) ([]byte, error) {
 		}
 	}
 	return out.Bytes(), nil
+}
+
+// FuzzyQuery returns history entries that fuzzy-match the search term,
+// ranked by match quality. It loads all candidate rows, scores them using
+// the fuzzy package, and returns the top matches.
+func (d Database) FuzzyQuery(qp conf.QueryParams) ([]byte, error) {
+	filterClause, filterArgs := sessionWorkdirFilter(qp)
+	args := append([]interface{}{qp.User, qp.Host}, filterArgs...)
+
+	rows, err := d.Query(`SELECT rowid, * FROM history
+		WHERE user LIKE ? AND host LIKE ?`+filterClause+`
+		ORDER BY datetime ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type histRow struct {
+		row                               int
+		user, host, command, pid, workdir string
+		t                                 time.Time
+	}
+
+	var commands []string
+	var allRows []histRow
+
+	for rows.Next() {
+		var r histRow
+		if err := rows.Scan(&r.row, &r.user, &r.host, &r.command, &r.t, &r.pid, &r.workdir); err != nil {
+			return nil, fmt.Errorf("scan error in FuzzyQuery: %w", err)
+		}
+		commands = append(commands, r.command)
+		allRows = append(allRows, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error in FuzzyQuery: %w", err)
+	}
+
+	matches := fuzzy.Rank(qp.Command, commands)
+
+	limit := qp.Kappa
+	if limit <= 0 {
+		limit = 25
+	}
+	if len(matches) > limit {
+		matches = matches[:limit]
+	}
+
+	res := result.New(qp.Format)
+	for _, m := range matches {
+		r := allRows[m.Index]
+		res.AddRow(r.row, r.user, r.host, r.command, r.pid, r.workdir, r.t)
+	}
+	return res.Formatted(), nil
 }

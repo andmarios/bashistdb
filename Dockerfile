@@ -7,7 +7,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-RUN go generate ./...
 RUN go build -ldflags='-s -w -extldflags "-static"' -o /bashistdb .
 
 FROM gcr.io/distroless/static:nonroot

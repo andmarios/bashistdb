@@ -64,6 +64,15 @@ func init() {
 	log = conf.Log
 }
 
+// NewWithPath creates a new Database using the given path instead of conf.Database.
+// This is primarily useful for tests that need an in-memory database.
+func NewWithPath(path string) (Database, error) {
+	originalDB := conf.Database
+	conf.Database = path
+	defer func() { conf.Database = originalDB }()
+	return New()
+}
+
 // New returns a new Database instance. It gets the filename for the
 // database from the configuration package. If the file does not exist,
 // it creates a new database. If it exists, it migrates it if it has an
@@ -178,25 +187,35 @@ func (d Database) AddRecord(user, host, command string, time time.Time, shellpid
 }
 
 // A parseline parses history output lines of the following format:
-//     LINENUM RFC3339_DATETIME COMMAND
+//
+//	LINENUM RFC3339_DATETIME COMMAND
 var parseLine = regexp.MustCompile(`^ *[0-9]+\*? *([0-9T:+-]{24,24}) *(.*)`)
 
 // A parseExportLine parses export formatted output from bashistdb:
-//     USER HOSTNAME RFC3339_DATETIME COMMAND
-//([a-zA-Z_][a-zA-Z0-9_-]*) ([a-zA-Z0-9][a-zA-Z0-9.-]*) *([0-9T:+-]{24,24}) *(.*)
+//
+//	USER HOSTNAME RFC3339_DATETIME COMMAND
+//
+// ([a-zA-Z_][a-zA-Z0-9_-]*) ([a-zA-Z0-9][a-zA-Z0-9.-]*) *([0-9T:+-]{24,24}) *(.*)
 var parseExportLine = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_-]*) ([a-zA-Z0-9][a-zA-Z0-9.-]*) *([0-9T:+-]{24,24}) *(.*)`)
 
 // A parseExportLineExt parses extended export format with PID and URL-encoded CWD:
-//     USER HOSTNAME PID URL_ENCODED_CWD RFC3339_DATETIME COMMAND
+//
+//	USER HOSTNAME PID URL_ENCODED_CWD RFC3339_DATETIME COMMAND
 var parseExportLineExt = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_-]*) ([a-zA-Z0-9][a-zA-Z0-9.-]*) +(\d+) +(\S+) +([0-9T:+-]{24,24}) +(.*)`)
 
 // AddFromBuffer reads from a buffered Reader and scans for lines that match
 // history command's structure:
-//     LINENUM RFC3339_DATETIME COMMAND
+//
+//	LINENUM RFC3339_DATETIME COMMAND
+//
 // or extended export format:
-//     USER HOSTNAME PID URL_ENCODED_CWD RFC3339_DATETIME COMMAND
+//
+//	USER HOSTNAME PID URL_ENCODED_CWD RFC3339_DATETIME COMMAND
+//
 // or old export format:
-//     USER HOSTNAME RFC3339_DATETIME COMMAND
+//
+//	USER HOSTNAME RFC3339_DATETIME COMMAND
+//
 // Upon successful encounter it tries to store it to the database. It counts
 // total lines read and lines failed to insert into the database —usually
 // because they already exist. It reports the results in a sentence (stats
@@ -229,7 +248,7 @@ func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir s
 		if len(args) == 3 {
 			lineTime, err = time.Parse(RFC3339alt, args[1])
 			if err != nil {
-				tx.Rollback()
+				_ = tx.Rollback()
 				return "", err
 			}
 			lineUser = user
@@ -245,7 +264,7 @@ func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir s
 				once.Do(func() { log.Info.Println("Bashistdb extended export format detected.") })
 				lineTime, err = time.Parse(RFC3339alt, args[5])
 				if err != nil {
-					tx.Rollback()
+					_ = tx.Rollback()
 					return "", err
 				}
 				lineUser = args[1]
@@ -265,7 +284,7 @@ func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir s
 					once.Do(func() { log.Info.Println("Bashistdb export format detected.") })
 					lineTime, err = time.Parse(RFC3339alt, args[3])
 					if err != nil {
-						tx.Rollback()
+						_ = tx.Rollback()
 						return "", err
 					}
 					lineUser = args[1]
@@ -291,7 +310,7 @@ func (d Database) AddFromBuffer(r *bufio.Reader, user, host, shellpid, workdir s
 					log.Debug.Println("Duplicate entry. Ignoring.", lineUser, lineHost, lineCommand, lineTime)
 					failed++
 				} else {
-					tx.Rollback()
+					_ = tx.Rollback()
 					return "", err
 				}
 			} else {

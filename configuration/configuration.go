@@ -66,6 +66,7 @@ var (
 	content       = 5
 	session       = ""
 	workdirQuery  = ""
+	fuzzySet      = false
 	// Custom Flags that need custom (non-flag package code) to parse and set. //
 	// These are not parsed from flags but we set them with flag.Visit
 	userSet          = false
@@ -188,6 +189,14 @@ func checkFlagCombination() error {
 		return errors.New("Incompatible options: content search (-A, -B, -C) and a non standard query")
 	}
 
+	if fuzzySet && !querySet {
+		return errors.New("Fuzzy search (-F) requires a search term.")
+	}
+
+	if fuzzySet && (topkSet || regexSet || rowSet || usersSet || delRowsSet || afterContentSet || beforeContentSet || contentSet) {
+		return errors.New("Incompatible options: -F (fuzzy) with -topk, -R, -row, -users, -del, -A, -B, or -C")
+	}
+
 	// Check mode-operation incompatibility
 	if Mode == MODE_SERVER && QParams.Type != QUERY_DEMO {
 		return errors.New("Incompatible options: asked for server mode and other functions.\n\n")
@@ -200,6 +209,14 @@ func setOpAndQParams() error {
 	var err error
 	// Determine operation (used in local and client mode)
 	switch {
+	case fuzzySet && querySet:
+		Operation = OP_QUERY
+		QParams.Type = QUERY_FUZZY
+		QParams.Fuzzy = true
+		QParams.Kappa = 25 // default result limit
+		if lastkSet {
+			QParams.Kappa = lastk
+		}
 	case topkSet:
 		Operation = OP_QUERY
 		QParams.Type = QUERY_TOPK
@@ -285,6 +302,11 @@ func setOpAndQParams() error {
 		QParams.Command = "%" + strings.Join(flag.Args(), " ") + "%" // Grep like behaviour
 	}
 
+	// Fuzzy search uses the raw query, not SQL LIKE patterns
+	if fuzzySet {
+		QParams.Command = strings.Join(flag.Args(), " ")
+	}
+
 	// Session and workdir are filters applied to any query type.
 	if sessionSet {
 		QParams.Session = session
@@ -337,6 +359,7 @@ func setParseFlags() {
 	flag.IntVar(&content, "C", content, "return this many rows before and after match")
 	flag.StringVar(&session, "session", session, "filter by shell session PID")
 	flag.StringVar(&workdirQuery, "workdir", workdirQuery, "filter by working directory")
+	flag.BoolVar(&fuzzySet, "F", fuzzySet, "fuzzy search")
 	flag.Parse()
 }
 

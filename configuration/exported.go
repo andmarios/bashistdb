@@ -100,6 +100,7 @@ type QueryParams struct {
 	BeforeContent int    // Return also this many lines before match
 	Session       string // Filter by shell PID
 	Workdir       string // Filter by working directory
+	Fuzzy         bool   // Fuzzy search mode
 }
 
 // Available query types
@@ -113,6 +114,7 @@ const (
 	QUERY_DEMO    = "demo"    // Run some demo queries
 	QUERY_ROW     = "row"     // Return a plain single row given its rowid
 	QUERY_CONTENT = "content" // Content search (n lines before, after or both)
+	QUERY_FUZZY   = "fuzzy"   // Fuzzy search
 	DELETE        = "delete"  // Delete rows given their rowid
 )
 
@@ -177,6 +179,14 @@ Available options:
         For other types of query (e.g lastk, topk), it works as an exact match
         flag. Normally when you search for “term”, you really search for
         “%term%” which gives a grep like behaviour. With -R, wildcards are gone.
+    -F
+        Fuzzy search. Matches commands by fragments and approximate spelling.
+        “kube deploy prod” finds “kubectl apply -f deploy-prod.yaml”.
+        Typo tolerant: “gti comit” finds “git commit”.
+        Results ranked by relevance (best match first), top 25 by default.
+        Combine with -lastk N to change result limit or get chronological order.
+        Combine with -g for global search, -session/-workdir for filtering.
+        Incompatible with: -topk, -R, -A, -B, -C, -row, -del, -users.
 
     -lastk, -tail K
         Return the K most recent commands for the set user and host. If you add

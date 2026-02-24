@@ -32,18 +32,18 @@ Running
 
 Install sqlite3 on your machine and go get bashistdb:
 
-    $ go get github.com/andmarios/bashistdb
+	$ go get github.com/andmarios/bashistdb
 
 If you are on a hardened machine, you may need instead:
 
-    $ go get -u -ldflags '-extldflags=-fno-PIC' github.com/andmarios/bashistdb
+	$ go get -u -ldflags '-extldflags=-fno-PIC' github.com/andmarios/bashistdb
 
 Bashistdb needs your history to be timestamped in order to work. It understands
 the RFC3339 time format.
 If you want to also import your current history, you need to add unique
 timestamps to it. Bashistdb can perform these steps for you in one step:
 
-    $ bashistdb -init
+	$ bashistdb -init
 
 That's it. Logout and login (or source your bashrc) for the changes to take
 effect.
@@ -55,20 +55,20 @@ needed manually.
 
 In order to set up your bash to log and report RFC3339 timestamps, run:
 
-    $ export HISTTIMEFORMAT="%FT%T%z "
-    $ echo 'export HISTTIMEFORMAT="%FT%T%z "' >> ~/.bashrc
+	$ export HISTTIMEFORMAT="%FT%T%z "
+	$ echo 'export HISTTIMEFORMAT="%FT%T%z "' >> ~/.bashrc
 
 Add to your ~/.bashrc (safe to source multiple times):
 
-    if [[ "$PROMPT_COMMAND" != *"bashistdb"* ]]; then
-        [ -n "${PROMPT_COMMAND}" ] && PROMPT_COMMAND="${PROMPT_COMMAND};"
-        export PROMPT_COMMAND="${PROMPT_COMMAND} (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"
-    fi
+	if [[ "$PROMPT_COMMAND" != *"bashistdb"* ]]; then
+	    [ -n "${PROMPT_COMMAND}" ] && PROMPT_COMMAND="${PROMPT_COMMAND};"
+	    export PROMPT_COMMAND="${PROMPT_COMMAND} (history 1 | BASHISTDB_PID=\$\$ BASHISTDB_CWD=\$PWD bashistdb 2>/dev/null &)"
+	fi
 
 Add distinct timestamps to your current bash_history:
 
-    $ go get github.com/andmarios/bashistdb/tools/addTimestamp2Hist
-    $ addTimestamp2Hist -since 24 -write
+	$ go get github.com/andmarios/bashistdb/tools/addTimestamp2Hist
+	$ addTimestamp2Hist -since 24 -write
 
 This will create timestamps for your current commands that span equally accross
 the 24 last months.
@@ -80,46 +80,46 @@ In local mode your history is stored on your computer.
 Import your current history. You can import it as many times as you want. It is
 very fast and only new lines will be added.
 
-    $ history | bashistdb
+	$ history | bashistdb
 
 Check some stats:
 
-    $ bashistdb -v 1
+	$ bashistdb -v 1
 
 Perform a query:
 
-    $ bashistdb <SEARCH TERM>
+	$ bashistdb <SEARCH TERM>
 
 Restore your history file, percent sign (%) acts as wildcard for the query:
 
-    $ bashistdb -format restore % > ~/.bash_history
+	$ bashistdb -format restore % > ~/.bash_history
 
 ### Server - Client mode ###
 
 Start your server¹:
 
-    $ bashistdb -server -key <PASSPHRASE>
+	$ bashistdb -server -key <PASSPHRASE>
 
 From your client machine run bashistdb in client mode:
 
-    $ history | bashistdb -remote <SERVER> -key <PASSPHRASE>
+	$ history | bashistdb -remote <SERVER> -key <PASSPHRASE>
 
 You may use a configuration file or environment variables to setup bashistdb.
 
 Environment variables:
 
-    $ export BASHISTDB_REMOTE=<SERVER>
-    $ export BASHISTDB_KEY=<PASSPHRASE>
-    $ bashistdb -verbose 1
+	$ export BASHISTDB_REMOTE=<SERVER>
+	$ export BASHISTDB_KEY=<PASSPHRASE>
+	$ bashistdb -verbose 1
 
 Configuration file (~/.bashistdb.conf) is better. You can create it and update
 it with bashistdb:
 
-    $ bashistdb -r <SERVER> -k <PASSPHRASE> -p <PORT> -save
+	$ bashistdb -r <SERVER> -k <PASSPHRASE> -p <PORT> -save
 
 Update a variable in the configuration:
 
-    $ bashistdb -k <NEW PASSPHRASE> -save
+	$ bashistdb -k <NEW PASSPHRASE> -save
 
 Messages are encrypted using NaCl secret-key authenticated encryption and
 scrypt key derivation. Check <https://github.com/andmarios/crypto/nacl/saltsecret>
